@@ -38,13 +38,22 @@ const WPCAS_PROBE_SEED_LEAD_SECONDS = 300;
  * Seeds the queue using Action Scheduler's own `action generate` WP-CLI
  * command -- not a hand-rolled seeder, per the ticket -- so seeding
  * exercises the exact code path a real Action Scheduler caller would.
+ *
+ * $due_now is issue #9's seam: a worker-occupancy measurement needs a real
+ * drain in flight, which needs actions that are actually due, but #2's
+ * default lead time (WPCAS_PROBE_SEED_LEAD_SECONDS) deliberately schedules
+ * them ~5 minutes out so "confirm 50 pending" stays stable against Action
+ * Scheduler's async dispatcher (see that constant's own docstring). This is
+ * the minimal due-now capability #9 needs, not the canonical due-now path --
+ * issue #4 (a parallel sibling on the same base branch) is independently
+ * building that; issue #10 reconciles the two afterward.
  */
-function wpcas_probe_seed( int $count ): void {
+function wpcas_probe_seed( int $count, bool $due_now = false ): void {
 	if ( $count < 1 ) {
 		WP_CLI::error( "count must be a positive integer, got '{$count}'." );
 	}
 
-	$start = time() + WPCAS_PROBE_SEED_LEAD_SECONDS;
+	$start = $due_now ? time() : time() + WPCAS_PROBE_SEED_LEAD_SECONDS;
 
 	WP_CLI::runcommand(
 		sprintf(
@@ -57,10 +66,11 @@ function wpcas_probe_seed( int $count ): void {
 
 	WP_CLI::log(
 		sprintf(
-			'Seeded %d pending "%s" action(s), due %s UTC.',
+			'Seeded %d pending "%s" action(s), due %s UTC%s.',
 			$count,
 			WPCAS_PROBE_HOOK,
-			gmdate( 'c', $start )
+			gmdate( 'c', $start ),
+			$due_now ? ' (due-now)' : ''
 		)
 	);
 }
@@ -154,6 +164,32 @@ function wpcas_probe_clear_cron_transient(): bool {
 	$was_set = wpcas_probe_cron_in_progress();
 
 	delete_transient( 'doing_cron' );
+
+	return $was_set;
+}
+
+/**
+ * Clears Action Scheduler's own `async-request-runner` lock (see
+ * ActionScheduler_QueueRunner::maybe_dispatch_async_request()), returning
+ * whether it was set beforehand.
+ *
+ * Issue #9 seam: this lock throttles the async dispatch this ticket's
+ * occupancy trigger depends on to "at most once every 60 seconds" (see
+ * ActionScheduler_Lock::$lock_duration). A lock left over from a previous
+ * occupancy run (or any other admin-context request that happened to
+ * dispatch one) would make a later trigger request return fast without
+ * actually starting a drain -- indistinguishable, from the trigger
+ * response alone, from the real "returns almost instantly" behaviour this
+ * ticket is trying to measure. Clearing it immediately before triggering
+ * rules that specific false result out, the same way reset.php already
+ * rules out a stale "doing_cron" transient before preflight.
+ */
+function wpcas_probe_clear_async_dispatch_lock(): bool {
+	$lock_option = 'action_scheduler_lock_async-request-runner';
+
+	$was_set = false !== get_option( $lock_option, false );
+
+	delete_option( $lock_option );
 
 	return $was_set;
 }

@@ -13,9 +13,10 @@
 #   bin/stack down [args...]   # stop and remove containers
 #   bin/stack shell            # interactive shell in the wordpress container
 #   bin/stack exec <cmd>       # run <cmd> in the wordpress container (e.g. wp-cli)
-#   bin/stack seed [count]     # seed <count> (default 50) pending probe actions
-#   bin/stack reset [count]    # clear transient/claims/leftovers, then re-seed
-#   bin/stack preflight        # assert preconditions, emit a JSON snapshot
+#   bin/stack seed [count] [--due-now]  # seed <count> (default 50) pending probe actions
+#   bin/stack reset [count] [--due-now] # clear transient/claims/leftovers, then re-seed
+#   bin/stack preflight                 # assert preconditions, emit a JSON snapshot
+#   bin/stack occupancy [count]         # measure worker occupancy during a drain (issue #9)
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -38,6 +39,161 @@ export STACK_PORT="$PORT"
 
 compose() {
     docker compose -f "$COMPOSE_FILE" "$@"
+}
+
+# --- issue #9: worker-occupancy measurement -------------------------------
+#
+# Measures worker occupancy during a real, in-flight drain: seeds due-now
+# actions, triggers Action Scheduler's async drain via an admin-context HTTP
+# hit (which returns almost instantly itself -- see occupancy_trigger()),
+# then fires concurrent GET / requests against this stack's own published
+# port at increasing concurrency levels while polling the drain's own
+# pending count out-of-band (via wp-cli, never over HTTP, so polling itself
+# never consumes one of the php-cli-server workers being measured). Prints
+# the finished JSON record from docker/wp-cli/lib/occupancy-assertions.php
+# (via bin/occupancy-report.php), which names the server model explicitly
+# so the figures can never be misread as PHP-FPM.
+#
+# Concurrency levels deliberately bracket the worker pool: below, at, and
+# (twice) above PHP_CLI_SERVER_WORKERS, so a run can show latency staying
+# flat under the free-worker count and degrading once concurrency exceeds
+# it -- see the PR's "Decisions" for the run that validated this bracket.
+WPCAS_OCCUPANCY_CONCURRENCY_LEVELS=(3 6 12 24)
+WPCAS_OCCUPANCY_DRAIN_TIMEOUT_SECONDS=30
+
+# $1: concurrency. Fires that many concurrent GET / requests against this
+# stack's own front end from the host (real external HTTP clients, not
+# requests made from inside the container), and prints a JSON array of
+# their %{time_total} response times in seconds.
+occupancy_curl_wave() {
+    local concurrency="$1"
+    local tmp
+    tmp="$(mktemp -d)"
+    local pids=()
+    local i
+    for i in $(seq 1 "$concurrency"); do
+        curl -s -o /dev/null -w '%{time_total}\n' "http://localhost:${STACK_PORT}/" > "$tmp/$i.time" &
+        pids+=($!)
+    done
+    for i in "${pids[@]}"; do wait "$i"; done
+    cat "$tmp"/*.time | jq -R -s 'split("\n") | map(select(length > 0) | tonumber)'
+    rm -rf "$tmp"
+}
+
+# Polled via a plain wp-cli process (CLI SAPI), not over HTTP -- so polling
+# never competes with the front-end requests for a php-cli-server worker.
+occupancy_pending_count() {
+    compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/pending-count.php --allow-root 2>/dev/null | tail -1
+}
+
+# Fires the single request that starts the drain, timed and status-coded in
+# one curl call so the trigger is only ever requested once. Targets
+# wp-admin/index.php specifically: Action Scheduler's async dispatch
+# (ActionScheduler_QueueRunner::maybe_dispatch_async_request()) only fires
+# from an is_admin() request context, and WordPress only sets that context
+# once an actual wp-admin/*.php file is requested and bootstrapped -- an
+# unauthenticated hit still bootstraps far enough to dispatch before
+# redirecting to wp-login.php, so no admin credentials are needed here.
+# Empirically confirmed against this stack: hitting the bare front end (`/`
+# or `/wp-admin/` without `index.php`, which this repo's router.php falls
+# through to the front controller for) never dispatches a drain at all.
+occupancy_trigger() {
+    curl -s -o /dev/null -w '%{http_code} %{time_total}' "http://localhost:${STACK_PORT}/wp-admin/index.php"
+}
+
+run_occupancy() {
+    local count="${1:-50}"
+
+    # Both sub-commands' own stdout (WP_CLI::log()/success() output, and
+    # preflight's own JSON snapshot) is redirected to stderr here, not
+    # suppressed: `bin/stack occupancy`'s stdout is reserved for exactly one
+    # JSON value, the final record, so it stays pipeable/parseable (e.g.
+    # `bin/stack occupancy 50 > record.json`) the same way `preflight` alone
+    # already is.
+    echo "== occupancy: reset ${count} (due-now) ==" >&2
+    compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/reset.php "$count" due-now --allow-root >&2
+
+    echo "== occupancy: preflight ==" >&2
+    compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/preflight.php --allow-root >&2
+
+    local workers_total
+    workers_total="$(compose exec -T wordpress printenv PHP_CLI_SERVER_WORKERS 2>/dev/null | tr -d '\r\n')"
+    [ -n "$workers_total" ] || workers_total=1
+
+    echo "== occupancy: baseline waves (no drain in flight, workers_total=${workers_total}) ==" >&2
+    local baseline_waves_file drain_waves_file drain_samples_file facts_file
+    baseline_waves_file="$(mktemp)"; : > "$baseline_waves_file"
+    drain_waves_file="$(mktemp)"; : > "$drain_waves_file"
+    drain_samples_file="$(mktemp)"; : > "$drain_samples_file"
+    facts_file="$(mktemp)"
+
+    local c times
+    for c in "${WPCAS_OCCUPANCY_CONCURRENCY_LEVELS[@]}"; do
+        times="$(occupancy_curl_wave "$c")"
+        jq -nc --argjson concurrency "$c" --argjson times "$times" \
+            '{concurrency: $concurrency, response_times_seconds: $times}' >> "$baseline_waves_file"
+        echo "  baseline concurrency=${c}: ${times}" >&2
+    done
+
+    echo "== occupancy: trigger ==" >&2
+    local trigger_output trigger_code trigger_time trigger_epoch
+    trigger_output="$(occupancy_trigger)"
+    trigger_code="$(echo "$trigger_output" | awk '{print $1}')"
+    trigger_time="$(echo "$trigger_output" | awk '{print $2}')"
+    trigger_epoch="$(date +%s.%N)"
+    echo "  trigger_response_seconds=${trigger_time} http_code=${trigger_code}" >&2
+
+    echo "== occupancy: during-drain waves ==" >&2
+    local level_i=0 now offset pending
+    while true; do
+        now="$(date +%s.%N)"
+        offset="$(echo "$now - $trigger_epoch" | bc)"
+        pending="$(occupancy_pending_count)"
+        jq -nc --argjson t "$offset" --argjson p "$pending" \
+            '{t_offset_seconds: $t, pending: $p}' >> "$drain_samples_file"
+
+        if [ "$pending" = "0" ]; then
+            echo "  t_offset=${offset}s pending=0 -- drain complete" >&2
+            break
+        fi
+
+        if (( $(echo "$offset > $WPCAS_OCCUPANCY_DRAIN_TIMEOUT_SECONDS" | bc -l) )); then
+            echo "  t_offset=${offset}s pending=${pending} -- TIMEOUT (${WPCAS_OCCUPANCY_DRAIN_TIMEOUT_SECONDS}s), aborting wave loop" >&2
+            break
+        fi
+
+        c="${WPCAS_OCCUPANCY_CONCURRENCY_LEVELS[$(( level_i % ${#WPCAS_OCCUPANCY_CONCURRENCY_LEVELS[@]} ))]}"
+        level_i=$(( level_i + 1 ))
+        times="$(occupancy_curl_wave "$c")"
+        jq -nc --argjson t "$offset" --argjson concurrency "$c" --argjson times "$times" \
+            '{t_offset_seconds: $t, concurrency: $concurrency, response_times_seconds: $times}' >> "$drain_waves_file"
+        echo "  t_offset=${offset}s pending=${pending} concurrency=${c} times=${times}" >&2
+    done
+
+    jq -n \
+        --arg server_model "php-cli-server" \
+        --argjson workers_total "$workers_total" \
+        --arg trigger_url "http://localhost:${STACK_PORT}/wp-admin/index.php" \
+        --argjson trigger_response_seconds "$trigger_time" \
+        --argjson trigger_http_code "$trigger_code" \
+        --argjson pending_before "$count" \
+        --argjson timeout_seconds "$WPCAS_OCCUPANCY_DRAIN_TIMEOUT_SECONDS" \
+        --slurpfile samples "$drain_samples_file" \
+        --slurpfile baseline_waves "$baseline_waves_file" \
+        --slurpfile drain_waves "$drain_waves_file" \
+        '{
+            server_model: $server_model,
+            workers_total: $workers_total,
+            trigger: {url: $trigger_url, response_seconds: $trigger_response_seconds, http_code: $trigger_http_code},
+            drain: {pending_before: $pending_before, timeout_seconds: $timeout_seconds, samples: $samples},
+            baseline_waves: $baseline_waves,
+            drain_waves: $drain_waves
+        }' > "$facts_file"
+
+    echo "== occupancy: record ==" >&2
+    php "$REPO_ROOT/bin/occupancy-report.php" < "$facts_file"
+
+    rm -f "$baseline_waves_file" "$drain_waves_file" "$drain_samples_file" "$facts_file"
 }
 
 cmd="${1:-}"
@@ -68,24 +224,36 @@ case "$cmd" in
         # no matter where it appears. --use-include runs the file via a
         # normal PHP `include` instead, same as any other required file in
         # this codebase, so strict_types works like it does everywhere else.
-        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/seed.php "$@" --allow-root
+        #
+        # `--due-now` (issue #9) is translated to the positional `due-now`
+        # token here rather than passed through as a flag: `wp eval-file`
+        # validates assoc-args strictly against its own command signature
+        # and rejects any `--flag` it doesn't itself recognize -- see
+        # seed.php's docstring.
+        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/seed.php "${@/--due-now/due-now}" --allow-root
         ;;
     reset)
-        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/reset.php "$@" --allow-root
+        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/reset.php "${@/--due-now/due-now}" --allow-root
         ;;
     preflight)
         compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/preflight.php "$@" --allow-root
         ;;
+    occupancy)
+        # issue #9: measure worker occupancy during a drain. See the
+        # run_occupancy() function above for the full scenario.
+        run_occupancy "$@"
+        ;;
     *)
-        echo "Usage: $(basename "$0") {up|down|shell|exec|seed|reset|preflight} [args...]" >&2
-        echo "  up               build and start the stack" >&2
-        echo "  down             stop and remove the stack" >&2
-        echo "  shell            open a shell in the wordpress container" >&2
-        echo "  exec <cmd>       run <cmd> in the wordpress container, e.g.:" >&2
-        echo "                     bin/stack exec wp core is-installed" >&2
-        echo "  seed [count]     seed <count> (default 50) pending probe actions" >&2
-        echo "  reset [count]    clear transient/claims/leftovers, then re-seed" >&2
-        echo "  preflight        assert preconditions, emit a JSON snapshot" >&2
+        echo "Usage: $(basename "$0") {up|down|shell|exec|seed|reset|preflight|occupancy} [args...]" >&2
+        echo "  up                    build and start the stack" >&2
+        echo "  down                  stop and remove the stack" >&2
+        echo "  shell                 open a shell in the wordpress container" >&2
+        echo "  exec <cmd>            run <cmd> in the wordpress container, e.g.:" >&2
+        echo "                          bin/stack exec wp core is-installed" >&2
+        echo "  seed [count] [--due-now]   seed <count> (default 50) pending probe actions" >&2
+        echo "  reset [count] [--due-now]  clear transient/claims/leftovers, then re-seed" >&2
+        echo "  preflight             assert preconditions, emit a JSON snapshot" >&2
+        echo "  occupancy [count]     measure worker occupancy during a drain (issue #9)" >&2
         exit 1
         ;;
 esac
