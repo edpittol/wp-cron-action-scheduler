@@ -36,6 +36,16 @@ declare( strict_types=1 );
  * and an HTTP status for one vector (e.g. an HTTP endpoint that itself
  * shells out) is free to populate both; nothing here enforces exclusivity,
  * it's just what this ticket's two rows happen to look like.
+ *
+ * `canary_line` (added by issue #6, additive/backward-compatible): the
+ * section-3 canary guard's own log line, when one fired -- see
+ * docker/wp-cli/lib/canary.php for how it's parsed out of PHP's error log,
+ * and docker/wp-cli/measure-async-ajax.php for how that's verified to be a
+ * real, writable destination before being trusted. Optional in the input
+ * facts (defaults to `null`) so this ticket's two CLI-control rows, which
+ * never pass it, keep working unchanged; always present in the output,
+ * same discipline as `http_status`/`command` -- a vector with no canary
+ * guard armed reports `null`, not a missing key.
  */
 
 /**
@@ -128,6 +138,7 @@ function wpcas_result_summarize_execution_contexts( array $messages ): array {
  *     pending_after: int,
  *     log_messages: string[],
  *     probe_records: array<int, array{sapi: string, pid: int, timestamp: float}>,
+ *     canary_line?: string|null,
  * } $facts
  *
  * @return array<string, mixed>
@@ -165,5 +176,8 @@ function wpcas_result_record_build( array $facts ): array {
 		'outcome'             => $outcome,
 		'execution_contexts'  => wpcas_result_summarize_execution_contexts( $facts['log_messages'] ),
 		'probe_records'       => $facts['probe_records'],
+		// Optional in the input facts (see the module docblock); always
+		// present in the output, `null` when no canary fired/applies.
+		'canary_line'         => $facts['canary_line'] ?? null,
 	);
 }

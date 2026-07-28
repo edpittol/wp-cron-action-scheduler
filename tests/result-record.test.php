@@ -188,6 +188,23 @@ wpcas_test_assert_same( 'http-vector row: command is null, not an object', null,
 wpcas_test_assert_same( 'http-vector row: http_status carried through', 200, $http_vector_record['http_status'], $failures );
 wpcas_test_assert_same( 'http-vector row: schema_version unchanged', 2, $http_vector_record['schema_version'], $failures );
 
+// --- canary_line (issue #6) ----------------------------------------------
+//
+// Additive, backward-compatible field: every existing caller of this
+// function (measure.php's two CLI-control rows) never passes
+// 'canary_line' at all, so it must default to null rather than raising a
+// notice or being silently omitted from the record -- the field is
+// always present, same discipline as http_status/command.
+wpcas_test_assert_same( 'record without canary_line: defaults to null', null, $record['canary_line'], $failures );
+
+// The whole point of this ticket's own acceptance criterion ("the canary
+// line must be captured into the result record, not just emitted"): when
+// a caller does have a canary line, it comes through verbatim.
+$facts_with_canary                 = $http_vector_facts;
+$facts_with_canary['canary_line']  = '[cron-guard] queue run outside CLI: sapi=cli-server uri=/wp-admin/admin-ajax.php?action=as_async_request_queue_runner ip=127.0.0.1';
+$record_with_canary                = wpcas_result_record_build( $facts_with_canary );
+wpcas_test_assert_same( 'record with canary_line: passed through verbatim', $facts_with_canary['canary_line'], $record_with_canary['canary_line'], $failures );
+
 if ( array() !== $failures ) {
 	fwrite( STDERR, "FAIL\n" );
 	foreach ( $failures as $failure ) {

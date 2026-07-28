@@ -18,6 +18,10 @@
 #   bin/stack preflight                 # assert preconditions, emit a JSON snapshot
 #   bin/stack measure <control>         # run a CLI control, write a result record
 #                                        #   <control>: wp-cron | action-scheduler
+#   bin/stack measure-async-ajax <scenario-label>
+#                                        # POST an unauthenticated request to
+#                                        # Action Scheduler's async-request ajax
+#                                        # action (issue #6), write a result record
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -113,8 +117,29 @@ case "$cmd" in
             exit "$rc"
         fi
         ;;
+    measure-async-ajax)
+        # Same file/temp-file/mv discipline as `measure` above, for issue
+        # #6's HTTP-vector script (measure-async-ajax.php) instead of a CLI
+        # control -- see that file's own docblock.
+        scenario="${1:?Usage: $(basename "$0") measure-async-ajax <scenario-label>}"
+        mkdir -p "$REPO_ROOT/results"
+        outfile="$REPO_ROOT/results/$(date -u +%Y%m%dT%H%M%SZ)-async-ajax-${scenario}.json"
+        tmpfile="$(mktemp "${outfile}.XXXXXX.tmp")"
+        rc=0
+        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/measure-async-ajax.php "$scenario" --allow-root > "$tmpfile" || rc=$?
+        if [ "$rc" -eq 0 ]; then
+            mv "$tmpfile" "$outfile"
+            echo "" >&2
+            echo "Result record written to ${outfile}" >&2
+        else
+            rm -f "$tmpfile"
+            echo "" >&2
+            echo "measure-async-ajax.php exited ${rc} -- no result record written (see the diagnostics above, e.g. a failed preflight or canary-writability self-test)." >&2
+            exit "$rc"
+        fi
+        ;;
     *)
-        echo "Usage: $(basename "$0") {up|down|shell|exec|seed|reset|preflight|measure} [args...]" >&2
+        echo "Usage: $(basename "$0") {up|down|shell|exec|seed|reset|preflight|measure|measure-async-ajax} [args...]" >&2
         echo "  up                    build and start the stack" >&2
         echo "  down                  stop and remove the stack" >&2
         echo "  shell                 open a shell in the wordpress container" >&2
@@ -125,6 +150,9 @@ case "$cmd" in
         echo "  preflight             assert preconditions, emit a JSON snapshot" >&2
         echo "  measure <control>     run a CLI control, write a result record;" >&2
         echo "                          <control>: wp-cron | action-scheduler" >&2
+        echo "  measure-async-ajax <scenario-label>" >&2
+        echo "                        POST an unauthenticated request to the async-request" >&2
+        echo "                        ajax action, write a result record" >&2
         exit 1
         ;;
 esac
