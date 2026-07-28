@@ -10,6 +10,12 @@ services:
       - "${STACK_PORT:-8080}:${STACK_PORT:-8080}"
     environment:
       STACK_PORT: "${STACK_PORT:-8080}"
+      # Issue #5: DISABLE_WP_CRON must be switchable without rebuilding
+      # the image -- wp-config.php (docker/Dockerfile) reads this at
+      # runtime via getenv(). `bin/stack set-disable-wp-cron <true|false>`
+      # recreates just this container with a new value; see that
+      # subcommand's own comment in bin/stack.
+      WPCAS_DISABLE_WP_CRON: "${WPCAS_DISABLE_WP_CRON:-true}"
     volumes:
       # Only the actual SQLite data file persists across `up`/`down`.
       # Everything else under wp-content (plugins, the db.php drop-in)

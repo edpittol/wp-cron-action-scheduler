@@ -82,13 +82,26 @@ RUN wp core download --allow-root --locale=en_US
 # the implicit spawn removes the self-inflicted churn without touching
 # either of those explicit, working paths, or Action Scheduler's separate
 # async-request dispatcher (unaffected by this constant).
+#
+# Runtime-switchable (issue #5): the value below is no longer the literal
+# `true` issue #2 baked in -- it reads the WPCAS_DISABLE_WP_CRON env var
+# via getenv() on every request, defaulting to true when that var is
+# absent (e.g. this image run directly with plain `docker run`, no
+# compose). docker-compose.yml passes WPCAS_DISABLE_WP_CRON through from
+# the host (see bin/stack's `set-disable-wp-cron` subcommand), so flipping
+# it only requires recreating the container with a new env value -- no
+# image rebuild. This is the "fleet caveat" scenario issue #5 exists to
+# measure: guard section 1 (block HTTP requests to the cron entry point)
+# only triggers while DISABLE_WP_CRON is true, so a site that legitimately
+# depends on the loopback (this constant false) must not lose cron
+# silently just because a shared mu-plugins directory armed that guard.
 RUN wp config create --allow-root \
         --dbname=wordpress \
         --dbuser=wordpress \
         --dbpass=wordpress \
         --dbhost=localhost \
         --skip-check \
-        --extra-php="define( 'WP_HOME', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SITEURL', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SQLITE_AST_DRIVER', true ); define( 'DISABLE_WP_CRON', true );"
+        --extra-php="define( 'WP_HOME', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SITEURL', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SQLITE_AST_DRIVER', true ); define( 'DISABLE_WP_CRON', false !== getenv( 'WPCAS_DISABLE_WP_CRON' ) ? filter_var( getenv( 'WPCAS_DISABLE_WP_CRON' ), FILTER_VALIDATE_BOOLEAN ) : true );"
 
 # SQLite Database Integration: install the plugin, then place its db.php
 # drop-in directly. The drop-in's own fallback resolves the plugin folder

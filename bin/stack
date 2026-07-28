@@ -18,6 +18,12 @@
 #   bin/stack preflight                 # assert preconditions, emit a JSON snapshot
 #   bin/stack measure <control>         # run a CLI control, write a result record
 #                                        #   <control>: wp-cron | action-scheduler
+#   bin/stack measure-http <label>      # GET wp-cron.php, write a result record
+#   bin/stack set-disable-wp-cron <true|false>
+#                                        # flip the DISABLE_WP_CRON constant at
+#                                        # runtime (issue #5) -- recreates the
+#                                        # container with a new env value, no
+#                                        # image rebuild
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -37,6 +43,15 @@ PORT=$(( 8500 + (16#$HASH % 400) ))
 
 export COMPOSE_PROJECT_NAME="wpcas-${HASH}"
 export STACK_PORT="$PORT"
+
+# Issue #5: the DISABLE_WP_CRON constant (baked into the image as a fixed
+# `true` since issue #2) must be switchable at runtime, without rebuilding
+# the image -- the "fleet caveat" scenario needs to prove the guard goes
+# inert with this false, and a rebuild-per-scenario would defeat the point
+# of measuring the *same* image under different runtime conditions. Default
+# true if the caller hasn't overridden it, so `bin/stack up` on its own
+# reproduces the same DISABLE_WP_CRON=true behaviour issue #2 shipped.
+export WPCAS_DISABLE_WP_CRON="${WPCAS_DISABLE_WP_CRON:-true}"
 
 compose() {
     docker compose -f "$COMPOSE_FILE" "$@"
@@ -78,30 +93,39 @@ case "$cmd" in
     preflight)
         compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/preflight.php "$@" --allow-root
         ;;
-    measure)
-        # Runs one CLI control (issue #4) and writes its result record to
-        # results/ on the host -- not just inside the container -- so it
-        # survives `bin/stack down` and can be committed as evidence.
+    measure|measure-http)
+        # Runs one control -- a CLI control (issue #4, `measure`) or an
+        # HTTP-vector request (issue #5, `measure-http`) -- and writes its
+        # result record to results/ on the host -- not just inside the
+        # container -- so it survives `bin/stack down` and can be
+        # committed as evidence.
         #
-        # measure.php sends everything *except* the final JSON record to
-        # STDOUT/STDERR split on purpose (see its own docblock): the record
-        # goes to STDOUT and nothing else does, progress/diagnostics go to
-        # STDERR. That alone isn't enough to guarantee $outfile only ever
-        # holds a real record, though -- redirecting straight to $outfile
-        # would create/truncate it before measure.php even runs, so a
-        # preflight abort (non-zero exit, nothing on STDOUT) would still
-        # leave a 0-byte file behind that looks like a record at a glance.
-        # Write to a temp file in the same directory instead (so the final
-        # `mv` is a same-filesystem rename, not a copy) and only place it
-        # at $outfile once the command has actually exited 0; on failure,
-        # delete the temp file and propagate the exit code instead of
-        # leaving anything behind.
-        control="${1:?Usage: $(basename "$0") measure <wp-cron|action-scheduler>}"
+        # Both measure.php and measure-http.php send everything *except*
+        # the final JSON record to STDOUT/STDERR split on purpose (see
+        # their own docblocks): the record goes to STDOUT and nothing else
+        # does, progress/diagnostics go to STDERR. That alone isn't enough
+        # to guarantee $outfile only ever holds a real record, though --
+        # redirecting straight to $outfile would create/truncate it before
+        # the script even runs, so a preflight abort (non-zero exit,
+        # nothing on STDOUT) would still leave a 0-byte file behind that
+        # looks like a record at a glance. Write to a temp file in the
+        # same directory instead (so the final `mv` is a same-filesystem
+        # rename, not a copy) and only place it at $outfile once the
+        # command has actually exited 0; on failure, delete the temp file
+        # and propagate the exit code instead of leaving anything behind.
+        if [ "$cmd" = "measure" ]; then
+            script="/opt/wpcas-tools/measure.php"
+            usage_label="measure <wp-cron|action-scheduler>"
+        else
+            script="/opt/wpcas-tools/measure-http.php"
+            usage_label="measure-http <label>"
+        fi
+        control="${1:?Usage: $(basename "$0") ${usage_label}}"
         mkdir -p "$REPO_ROOT/results"
         outfile="$REPO_ROOT/results/$(date -u +%Y%m%dT%H%M%SZ)-${control}.json"
         tmpfile="$(mktemp "${outfile}.XXXXXX.tmp")"
         rc=0
-        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/measure.php "$control" --allow-root > "$tmpfile" || rc=$?
+        compose exec -T wordpress wp eval-file --use-include "$script" "$control" --allow-root > "$tmpfile" || rc=$?
         if [ "$rc" -eq 0 ]; then
             mv "$tmpfile" "$outfile"
             echo "" >&2
@@ -109,12 +133,30 @@ case "$cmd" in
         else
             rm -f "$tmpfile"
             echo "" >&2
-            echo "measure.php exited ${rc} -- no result record written (see the diagnostics above, e.g. a failed preflight)." >&2
+            echo "$(basename "$script") exited ${rc} -- no result record written (see the diagnostics above, e.g. a failed preflight)." >&2
             exit "$rc"
         fi
         ;;
+    set-disable-wp-cron)
+        # Issue #5: flips the DISABLE_WP_CRON constant without rebuilding
+        # the image. wp-config.php (docker/Dockerfile) reads this env var
+        # via getenv() on every request, so recreating the container with
+        # a new value is enough -- `compose up -d` here deliberately omits
+        # `--build` (unlike the `up` case above): only the container is
+        # recreated, the image is untouched.
+        value="${1:?Usage: $(basename "$0") set-disable-wp-cron <true|false>}"
+        case "$value" in
+            true|false) ;;
+            *)
+                echo "error: value must be 'true' or 'false', got '${value}'" >&2
+                exit 1
+                ;;
+        esac
+        WPCAS_DISABLE_WP_CRON="$value" compose up -d wordpress
+        echo "DISABLE_WP_CRON is now ${value} (container recreated, image not rebuilt)." >&2
+        ;;
     *)
-        echo "Usage: $(basename "$0") {up|down|shell|exec|seed|reset|preflight|measure} [args...]" >&2
+        echo "Usage: $(basename "$0") {up|down|shell|exec|seed|reset|preflight|measure|measure-http|set-disable-wp-cron} [args...]" >&2
         echo "  up                    build and start the stack" >&2
         echo "  down                  stop and remove the stack" >&2
         echo "  shell                 open a shell in the wordpress container" >&2
@@ -125,6 +167,9 @@ case "$cmd" in
         echo "  preflight             assert preconditions, emit a JSON snapshot" >&2
         echo "  measure <control>     run a CLI control, write a result record;" >&2
         echo "                          <control>: wp-cron | action-scheduler" >&2
+        echo "  measure-http <label>  GET wp-cron.php unauthenticated, write a result record" >&2
+        echo "  set-disable-wp-cron <true|false>" >&2
+        echo "                        flip DISABLE_WP_CRON at runtime, no rebuild" >&2
         exit 1
         ;;
 esac
