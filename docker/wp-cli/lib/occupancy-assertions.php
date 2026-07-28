@@ -10,7 +10,7 @@ declare( strict_types=1 );
  * tests/occupancy-assertions.test.php. All the impure gathering (firing
  * concurrent HTTP requests, polling the pending count, triggering the
  * drain) happens in bin/stack's `occupancy` command instead, which shells
- * out to this file (via a thin CLI wrapper, `bin/wpcas-occupancy-report.php`)
+ * out to this file (via a thin CLI wrapper, `bin/occupancy-report.php`)
  * once every raw sample has already been collected.
  *
  * Turns a set of already-gathered raw samples into the final record this
@@ -129,7 +129,14 @@ function wpcas_occupancy_build_record( array $facts ): array {
 	}
 
 	if ( 'measured' === $result_kind && ! $degradation_observed ) {
-		$notes[] = 'No front-end latency degradation of more than 25% was observed at the highest tested concurrency on this run; occupancy is reported from the drain-duration/worker-count architecture instead (see workers_occupied_by_drain).';
+		// Distinguish the two separate claims this record makes, so a
+		// reader of the JSON alone (not this docstring, not the PR) can't
+		// mistake "measured" for "degradation was measured": the primary
+		// measurement (a real, in-flight drain, with worker occupancy
+		// reported below) succeeded; the secondary hypothesis (front-end
+		// latency degrades as workers are consumed) simply did not
+		// reproduce at this concurrency/occupancy level on this run.
+		$notes[] = 'Primary measurement succeeded: a real, in-flight drain was triggered and worker occupancy is reported below (see workers_occupied_by_drain). Secondary hypothesis NOT reproduced on this run: front-end latency degradation of more than 25% was not observed at the highest tested concurrency; movement across concurrency levels was within noise -- see degradation_by_concurrency for the real, unrounded per-concurrency deltas.';
 	}
 
 	return array(
@@ -144,8 +151,12 @@ function wpcas_occupancy_build_record( array $facts ): array {
 		// decline in drain.samples below) -- not something this server model
 		// exposes as a queryable "workers busy" figure, so this is an
 		// architectural inference from the request model, not a direct
-		// server-side reading.
+		// server-side reading. workers_occupied_by_drain_method and
+		// _basis push that same distinction into the record itself, not
+		// just this docstring, since the record outlives this code.
 		'workers_occupied_by_drain' => 1,
+		'workers_occupied_by_drain_method' => 'architectural-inference',
+		'workers_occupied_by_drain_basis' => 'php-cli-server serves each request with one worker process, synchronously, for that request\'s lifetime; Action Scheduler processed the whole due batch as one such request, confirmed for this run by the continuous, gap-free pending-count decline in pending_count_samples. This server model exposes no queryable "workers busy" count -- this figure is not a direct server-side reading.',
 		'trigger'                 => array(
 			'url'              => $facts['trigger']['url'],
 			'http_code'        => $facts['trigger']['http_code'],

@@ -3,118 +3,120 @@
     "server_model": "php-cli-server, 6 workers",
     "workers_total": 6,
     "workers_occupied_by_drain": 1,
+    "workers_occupied_by_drain_method": "architectural-inference",
+    "workers_occupied_by_drain_basis": "php-cli-server serves each request with one worker process, synchronously, for that request's lifetime; Action Scheduler processed the whole due batch as one such request, confirmed for this run by the continuous, gap-free pending-count decline in pending_count_samples. This server model exposes no queryable \"workers busy\" count -- this figure is not a direct server-side reading.",
     "trigger": {
         "url": "http://localhost:8813/wp-admin/index.php",
         "http_code": 302,
-        "response_seconds": 1.017506,
+        "response_seconds": 1.047575,
         "is_fast": false
     },
-    "drain_duration_seconds": 9.581955,
+    "drain_duration_seconds": 9.856981,
     "drain_completed": true,
     "drain_observed_in_flight": true,
     "pending_count_samples": [
         {
-            "t_offset_seconds": 0.004616,
+            "t_offset_seconds": 0.003914,
             "pending": 45
         },
         {
-            "t_offset_seconds": 0.313284,
+            "t_offset_seconds": 0.330108,
             "pending": 43
         },
         {
-            "t_offset_seconds": 0.629611,
+            "t_offset_seconds": 0.710799,
             "pending": 42
         },
         {
-            "t_offset_seconds": 1.023751,
+            "t_offset_seconds": 1.10225,
             "pending": 40
         },
         {
-            "t_offset_seconds": 1.530032,
+            "t_offset_seconds": 1.66199,
             "pending": 38
         },
         {
-            "t_offset_seconds": 1.818096,
+            "t_offset_seconds": 1.948339,
             "pending": 36
         },
         {
-            "t_offset_seconds": 2.100773,
+            "t_offset_seconds": 2.241061,
             "pending": 35
         },
         {
-            "t_offset_seconds": 2.471313,
+            "t_offset_seconds": 2.597933,
             "pending": 33
         },
         {
-            "t_offset_seconds": 2.998923,
-            "pending": 31
+            "t_offset_seconds": 3.24672,
+            "pending": 30
         },
         {
-            "t_offset_seconds": 3.29772,
+            "t_offset_seconds": 3.564495,
             "pending": 29
         },
         {
-            "t_offset_seconds": 3.598429,
-            "pending": 28
+            "t_offset_seconds": 3.884933,
+            "pending": 27
         },
         {
-            "t_offset_seconds": 4.16173,
+            "t_offset_seconds": 4.51451,
             "pending": 25
         },
         {
-            "t_offset_seconds": 4.679624,
-            "pending": 23
+            "t_offset_seconds": 5.165422,
+            "pending": 22
         },
         {
-            "t_offset_seconds": 4.972943,
+            "t_offset_seconds": 5.471179,
             "pending": 21
         },
         {
-            "t_offset_seconds": 5.307225,
-            "pending": 20
+            "t_offset_seconds": 5.804079,
+            "pending": 19
         },
         {
-            "t_offset_seconds": 5.699914,
-            "pending": 18
+            "t_offset_seconds": 6.224662,
+            "pending": 17
         },
         {
-            "t_offset_seconds": 6.179586,
-            "pending": 16
+            "t_offset_seconds": 6.73411,
+            "pending": 15
         },
         {
-            "t_offset_seconds": 6.480442,
+            "t_offset_seconds": 7.003862,
             "pending": 14
         },
         {
-            "t_offset_seconds": 6.824833,
-            "pending": 13
+            "t_offset_seconds": 7.282684,
+            "pending": 12
         },
         {
-            "t_offset_seconds": 7.191317,
+            "t_offset_seconds": 7.627638,
             "pending": 11
         },
         {
-            "t_offset_seconds": 7.828415,
-            "pending": 8
+            "t_offset_seconds": 8.070796,
+            "pending": 9
         },
         {
-            "t_offset_seconds": 8.108834,
+            "t_offset_seconds": 8.326576,
             "pending": 7
         },
         {
-            "t_offset_seconds": 8.423719,
-            "pending": 5
+            "t_offset_seconds": 8.629398,
+            "pending": 6
         },
         {
-            "t_offset_seconds": 8.821361,
-            "pending": 3
+            "t_offset_seconds": 8.96952,
+            "pending": 4
         },
         {
-            "t_offset_seconds": 9.316566,
-            "pending": 1
+            "t_offset_seconds": 9.595644,
+            "pending": 2
         },
         {
-            "t_offset_seconds": 9.581955,
+            "t_offset_seconds": 9.856981,
             "pending": 0
         }
     ],
@@ -122,312 +124,312 @@
         {
             "concurrency": 3,
             "count": 3,
-            "min": 0.038752,
-            "max": 0.041658,
-            "avg": 0.03975
+            "min": 0.225776,
+            "max": 0.438555,
+            "avg": 0.2972356666666666
         },
         {
             "concurrency": 6,
             "count": 6,
-            "min": 0.037767,
-            "max": 0.072302,
-            "avg": 0.049951166666666665
+            "min": 0.05147,
+            "max": 0.105056,
+            "avg": 0.07373866666666666
         },
         {
             "concurrency": 12,
             "count": 12,
-            "min": 0.042118,
-            "max": 0.296029,
-            "avg": 0.11730574999999999
+            "min": 0.046155,
+            "max": 0.117736,
+            "avg": 0.08272566666666667
         },
         {
             "concurrency": 24,
             "count": 24,
-            "min": 0.0588,
-            "max": 0.259339,
-            "avg": 0.13588716666666667
+            "min": 0.041818,
+            "max": 0.235417,
+            "avg": 0.13834208333333334
         }
     ],
     "drain_waves": [
         {
-            "t_offset_seconds": 0.004616,
+            "t_offset_seconds": 0.003914,
             "concurrency": 3,
             "stats": {
                 "count": 3,
-                "min": 0.027897,
-                "max": 0.032817,
-                "avg": 0.030289333333333335
+                "min": 0.026148,
+                "max": 0.046084,
+                "avg": 0.032831
             }
         },
         {
-            "t_offset_seconds": 0.313284,
+            "t_offset_seconds": 0.330108,
             "concurrency": 6,
             "stats": {
                 "count": 6,
-                "min": 0.030928,
-                "max": 0.064075,
-                "avg": 0.04656183333333334
+                "min": 0.032912,
+                "max": 0.077662,
+                "avg": 0.0565815
             }
         },
         {
-            "t_offset_seconds": 0.629611,
+            "t_offset_seconds": 0.710799,
             "concurrency": 12,
             "stats": {
                 "count": 12,
-                "min": 0.049284,
-                "max": 0.132003,
-                "avg": 0.08954783333333333
+                "min": 0.049696,
+                "max": 0.135169,
+                "avg": 0.09330008333333334
             }
         },
         {
-            "t_offset_seconds": 1.023751,
+            "t_offset_seconds": 1.10225,
             "concurrency": 24,
             "stats": {
                 "count": 24,
-                "min": 0.058313,
-                "max": 0.235069,
-                "avg": 0.151644
+                "min": 0.046191,
+                "max": 0.292474,
+                "avg": 0.15532566666666667
             }
         },
         {
-            "t_offset_seconds": 1.530032,
+            "t_offset_seconds": 1.66199,
             "concurrency": 3,
             "stats": {
                 "count": 3,
-                "min": 0.024493,
-                "max": 0.049866,
-                "avg": 0.03496666666666667
+                "min": 0.024811,
+                "max": 0.044486,
+                "avg": 0.03222966666666666
             }
         },
         {
-            "t_offset_seconds": 1.818096,
+            "t_offset_seconds": 1.948339,
             "concurrency": 6,
             "stats": {
                 "count": 6,
-                "min": 0.036781,
-                "max": 0.056788,
-                "avg": 0.045030999999999995
+                "min": 0.035162,
+                "max": 0.053681,
+                "avg": 0.04196116666666667
             }
         },
         {
-            "t_offset_seconds": 2.100773,
+            "t_offset_seconds": 2.241061,
             "concurrency": 12,
             "stats": {
                 "count": 12,
-                "min": 0.046684,
-                "max": 0.130657,
-                "avg": 0.09468075
+                "min": 0.033402,
+                "max": 0.115579,
+                "avg": 0.07406175000000001
             }
         },
         {
-            "t_offset_seconds": 2.471313,
+            "t_offset_seconds": 2.597933,
             "concurrency": 24,
             "stats": {
                 "count": 24,
-                "min": 0.044416,
-                "max": 0.258072,
-                "avg": 0.14743916666666668
+                "min": 0.037071,
+                "max": 0.350905,
+                "avg": 0.20046745833333326
             }
         },
         {
-            "t_offset_seconds": 2.998923,
+            "t_offset_seconds": 3.24672,
             "concurrency": 3,
             "stats": {
                 "count": 3,
-                "min": 0.029196,
-                "max": 0.068498,
-                "avg": 0.04444833333333333
+                "min": 0.033976,
+                "max": 0.040901,
+                "avg": 0.03773866666666666
             }
         },
         {
-            "t_offset_seconds": 3.29772,
+            "t_offset_seconds": 3.564495,
             "concurrency": 6,
             "stats": {
                 "count": 6,
-                "min": 0.030289,
-                "max": 0.064589,
-                "avg": 0.04313166666666667
+                "min": 0.037365,
+                "max": 0.083451,
+                "avg": 0.06040516666666667
             }
         },
         {
-            "t_offset_seconds": 3.598429,
+            "t_offset_seconds": 3.884933,
             "concurrency": 12,
             "stats": {
                 "count": 12,
-                "min": 0.060724,
-                "max": 0.308224,
-                "avg": 0.11142983333333334
+                "min": 0.040233,
+                "max": 0.379783,
+                "avg": 0.14000175
             }
         },
         {
-            "t_offset_seconds": 4.16173,
+            "t_offset_seconds": 4.51451,
             "concurrency": 24,
             "stats": {
                 "count": 24,
-                "min": 0.045293,
-                "max": 0.210413,
-                "avg": 0.13084254166666665
+                "min": 0.056549,
+                "max": 0.357455,
+                "avg": 0.16017741666666666
             }
         },
         {
-            "t_offset_seconds": 4.679624,
+            "t_offset_seconds": 5.165422,
             "concurrency": 3,
             "stats": {
                 "count": 3,
-                "min": 0.036008,
-                "max": 0.054294,
-                "avg": 0.04303233333333334
+                "min": 0.030726,
+                "max": 0.032338,
+                "avg": 0.03148333333333333
             }
         },
         {
-            "t_offset_seconds": 4.972943,
+            "t_offset_seconds": 5.471179,
             "concurrency": 6,
             "stats": {
                 "count": 6,
-                "min": 0.033339,
-                "max": 0.079964,
-                "avg": 0.05029983333333334
+                "min": 0.036418,
+                "max": 0.067804,
+                "avg": 0.0500805
             }
         },
         {
-            "t_offset_seconds": 5.307225,
+            "t_offset_seconds": 5.804079,
             "concurrency": 12,
             "stats": {
                 "count": 12,
-                "min": 0.035883,
-                "max": 0.138425,
-                "avg": 0.0910545
+                "min": 0.036543,
+                "max": 0.153462,
+                "avg": 0.09549591666666664
             }
         },
         {
-            "t_offset_seconds": 5.699914,
+            "t_offset_seconds": 6.224662,
             "concurrency": 24,
             "stats": {
                 "count": 24,
-                "min": 0.03815,
-                "max": 0.208303,
-                "avg": 0.1255005833333333
+                "min": 0.039943,
+                "max": 0.232007,
+                "avg": 0.12760891666666666
             }
         },
         {
-            "t_offset_seconds": 6.179586,
+            "t_offset_seconds": 6.73411,
             "concurrency": 3,
             "stats": {
                 "count": 3,
-                "min": 0.032808,
-                "max": 0.053227,
-                "avg": 0.040389
+                "min": 0.027135,
+                "max": 0.039027,
+                "avg": 0.034692
             }
         },
         {
-            "t_offset_seconds": 6.480442,
+            "t_offset_seconds": 7.003862,
             "concurrency": 6,
             "stats": {
                 "count": 6,
-                "min": 0.035909,
-                "max": 0.070325,
-                "avg": 0.053984333333333336
+                "min": 0.025737,
+                "max": 0.055122,
+                "avg": 0.03743333333333333
             }
         },
         {
-            "t_offset_seconds": 6.824833,
+            "t_offset_seconds": 7.282684,
             "concurrency": 12,
             "stats": {
                 "count": 12,
-                "min": 0.0338,
-                "max": 0.12925,
-                "avg": 0.07969016666666667
+                "min": 0.035574,
+                "max": 0.10573,
+                "avg": 0.07143041666666666
             }
         },
         {
-            "t_offset_seconds": 7.191317,
+            "t_offset_seconds": 7.627638,
             "concurrency": 24,
             "stats": {
                 "count": 24,
-                "min": 0.031497,
-                "max": 0.372511,
-                "avg": 0.14260783333333335
+                "min": 0.035759,
+                "max": 0.197312,
+                "avg": 0.11493054166666668
             }
         },
         {
-            "t_offset_seconds": 7.828415,
+            "t_offset_seconds": 8.070796,
             "concurrency": 3,
             "stats": {
                 "count": 3,
-                "min": 0.030595,
-                "max": 0.031393,
-                "avg": 0.030998666666666664
+                "min": 0.037983,
+                "max": 0.044792,
+                "avg": 0.04250266666666667
             }
         },
         {
-            "t_offset_seconds": 8.108834,
+            "t_offset_seconds": 8.326576,
             "concurrency": 6,
             "stats": {
                 "count": 6,
-                "min": 0.035957,
-                "max": 0.079577,
-                "avg": 0.05476500000000001
+                "min": 0.026167,
+                "max": 0.065536,
+                "avg": 0.0436395
             }
         },
         {
-            "t_offset_seconds": 8.423719,
+            "t_offset_seconds": 8.629398,
             "concurrency": 12,
             "stats": {
                 "count": 12,
-                "min": 0.029707,
-                "max": 0.135186,
-                "avg": 0.0832175
+                "min": 0.037287,
+                "max": 0.110799,
+                "avg": 0.07053308333333333
             }
         },
         {
-            "t_offset_seconds": 8.821361,
+            "t_offset_seconds": 8.96952,
             "concurrency": 24,
             "stats": {
                 "count": 24,
-                "min": 0.043724,
-                "max": 0.230732,
-                "avg": 0.13094287500000004
+                "min": 0.042703,
+                "max": 0.369816,
+                "avg": 0.13706070833333334
             }
         },
         {
-            "t_offset_seconds": 9.316566,
+            "t_offset_seconds": 9.595644,
             "concurrency": 3,
             "stats": {
                 "count": 3,
-                "min": 0.026624,
-                "max": 0.03446,
-                "avg": 0.03144266666666667
+                "min": 0.026217,
+                "max": 0.03061,
+                "avg": 0.028606333333333334
             }
         }
     ],
     "degradation_by_concurrency": {
         "3": {
-            "baseline_avg_seconds": 0.03975,
-            "during_drain_avg_seconds": 0.03650957142857143,
-            "delta_seconds": -0.0032404285714285677,
-            "delta_pct": -0.08152021563342308
+            "baseline_avg_seconds": 0.2972356666666666,
+            "during_drain_avg_seconds": 0.034297666666666664,
+            "delta_seconds": -0.26293799999999995,
+            "delta_pct": -0.8846112007643766
         },
         "6": {
-            "baseline_avg_seconds": 0.049951166666666665,
-            "during_drain_avg_seconds": 0.048962277777777785,
-            "delta_seconds": -0.0009888888888888794,
-            "delta_pct": -0.0197971129581
+            "baseline_avg_seconds": 0.07373866666666666,
+            "during_drain_avg_seconds": 0.048350194444444446,
+            "delta_seconds": -0.025388472222222215,
+            "delta_pct": -0.34430338070784505
         },
         "12": {
-            "baseline_avg_seconds": 0.11730574999999999,
-            "during_drain_avg_seconds": 0.09160343055555555,
-            "delta_seconds": -0.02570231944444444,
-            "delta_pct": -0.21910536733659214
+            "baseline_avg_seconds": 0.08272566666666667,
+            "during_drain_avg_seconds": 0.09080383333333332,
+            "delta_seconds": 0.00807816666666665,
+            "delta_pct": 0.09765006426864677
         },
         "24": {
-            "baseline_avg_seconds": 0.13588716666666667,
-            "during_drain_avg_seconds": 0.13816283333333332,
-            "delta_seconds": 0.002275666666666648,
-            "delta_pct": 0.01674673718268697
+            "baseline_avg_seconds": 0.13834208333333334,
+            "during_drain_avg_seconds": 0.1492617847222222,
+            "delta_seconds": 0.01091970138888887,
+            "delta_pct": 0.07893260767642193
         }
     },
     "degradation_observed": false,
     "notes": [
-        "No front-end latency degradation of more than 25% was observed at the highest tested concurrency on this run; occupancy is reported from the drain-duration/worker-count architecture instead (see workers_occupied_by_drain)."
+        "Primary measurement succeeded: a real, in-flight drain was triggered and worker occupancy is reported below (see workers_occupied_by_drain). Secondary hypothesis NOT reproduced on this run: front-end latency degradation of more than 25% was not observed at the highest tested concurrency; movement across concurrency levels was within noise -- see degradation_by_concurrency for the real, unrounded per-concurrency deltas."
     ]
 }

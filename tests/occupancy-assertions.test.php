@@ -119,6 +119,10 @@ wpcas_test_assert_true( 'healthy: degradation_observed', $result['degradation_ob
 wpcas_test_assert_same( 'healthy: trigger response_seconds kept separate from drain duration', 0.05, $result['trigger']['response_seconds'], $failures );
 wpcas_test_assert_true( 'healthy: trigger is_fast', $result['trigger']['is_fast'], $failures );
 wpcas_test_assert_same( 'healthy: workers_occupied_by_drain', 1, $result['workers_occupied_by_drain'], $failures );
+wpcas_test_assert_same( 'healthy: workers_occupied_by_drain_method', 'architectural-inference', $result['workers_occupied_by_drain_method'], $failures );
+if ( ! is_string( $result['workers_occupied_by_drain_basis'] ) || '' === $result['workers_occupied_by_drain_basis'] ) {
+	$failures[] = 'healthy: workers_occupied_by_drain_basis: expected a non-empty string caveat, got ' . var_export( $result['workers_occupied_by_drain_basis'], true );
+}
 wpcas_test_assert_same( 'healthy: notes empty', array(), $result['notes'], $failures );
 
 // concurrency=20 degraded from 0.05 baseline to a 0.155 average during the
@@ -176,6 +180,13 @@ wpcas_test_assert_false( 'no degradation: degradation_observed', $result['degrad
 $note_count = count( $result['notes'] );
 if ( 1 !== $note_count ) {
 	$failures[] = sprintf( 'no degradation: expected exactly 1 note, got %d', $note_count );
+}
+// "measured" here must not be misread as "degradation was measured" -- the
+// note has to name both facts separately: the primary drain/occupancy
+// measurement succeeded, and the secondary degradation hypothesis did not
+// reproduce.
+if ( ! isset( $result['notes'][0] ) || false === strpos( $result['notes'][0], 'Primary measurement succeeded' ) || false === strpos( $result['notes'][0], 'NOT reproduced' ) ) {
+	$failures[] = 'no degradation: expected the note to distinguish "primary measurement succeeded" from "secondary hypothesis not reproduced", got ' . var_export( $result['notes'][0] ?? null, true );
 }
 
 // --- A slow trigger (not "almost instant") is flagged as not fast. --------
