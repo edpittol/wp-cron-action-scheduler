@@ -1,0 +1,8 @@
+# Guard files copied into place by `bin/guard arm`. The canonical source
+# for each lives in docker/mu-plugins-available/ and is tracked there;
+# these are just the currently-armed copies, so they should not show up
+# as untracked/modified files after running `bin/guard arm`.
+/docker/mu-plugins/10-block-http-cron.php
+/docker/mu-plugins/20-suppress-async-dispatch.php
+/docker/mu-plugins/30-log-non-cli-canary.php
+/docker/mu-plugins/40-unhook-queue-runner.php
