@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+#
+# Lifecycle wrapper around docker compose for this PoC's WordPress +
+# Action Scheduler stack.
+#
+# Namespacing: the project name and host port are derived from a hash of
+# this checkout's absolute path, so two checkouts (e.g. two worktrees, or
+# two clones) can run `bin/stack up` at the same time without colliding on
+# container/network/volume names or on the published port.
+#
+# Usage:
+#   bin/stack up             # build (if needed) and start, print the URL
+#   bin/stack down [args...] # stop and remove containers
+#   bin/stack shell          # interactive shell in the wordpress container
+#   bin/stack exec -- <cmd>  # run <cmd> in the wordpress container (e.g. wp-cli)
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+COMPOSE_FILE="$REPO_ROOT/docker-compose.yml"
+
+# Hash the checkout path (not the branch, not the repo name) so every
+# separate working copy on this machine gets its own namespace.
+HASH="$(printf '%s' "$REPO_ROOT" | shasum -a 256 | cut -c1-8)"
+PORT=$(( 8500 + (16#$HASH % 400) ))
+
+export COMPOSE_PROJECT_NAME="wpcas-${HASH}"
+export STACK_PORT="$PORT"
+export STACK_HASH="$HASH"
+
+compose() {
+    docker compose -f "$COMPOSE_FILE" "$@"
+}
+
+cmd="${1:-}"
+[ $# -gt 0 ] && shift || true
+
+case "$cmd" in
+    up)
+        compose up -d --build "$@"
+        echo ""
+        echo "WordPress is reachable at: http://localhost:${STACK_PORT}/"
+        echo "(namespace: ${COMPOSE_PROJECT_NAME}, derived from ${REPO_ROOT})"
+        ;;
+    down)
+        compose down "$@"
+        ;;
+    shell)
+        compose exec wordpress bash "$@"
+        ;;
+    exec)
+        # -T: no pseudo-tty, so this also works from non-interactive scripts.
+        compose exec -T wordpress "$@"
+        ;;
+    *)
+        echo "Usage: $(basename "$0") {up|down|shell|exec} [args...]" >&2
+        echo "  up            build and start the stack" >&2
+        echo "  down          stop and remove the stack" >&2
+        echo "  shell         open a shell in the wordpress container" >&2
+        echo "  exec <cmd>    run <cmd> in the wordpress container, e.g.:" >&2
+        echo "                  bin/stack exec wp core is-installed" >&2
+        exit 1
+        ;;
+esac

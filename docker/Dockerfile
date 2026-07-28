@@ -1,0 +1,92 @@
+FROM php:8.3-cli-bookworm
+
+# --- Single place the Action Scheduler version is pinned. -----------------
+# Every other reference in this image (the download URL, the label below)
+# is derived from this one build arg. Acceptance criterion: "Action
+# Scheduler 4.0.0 is active, with its version pinned in exactly one place."
+ARG ACTION_SCHEDULER_VERSION=4.0.0
+ENV ACTION_SCHEDULER_VERSION=${ACTION_SCHEDULER_VERSION}
+LABEL org.opencontainers.image.description="WordPress (PHP built-in server + SQLite) with Action Scheduler ${ACTION_SCHEDULER_VERSION}"
+
+# WP-CLI's extractor needs more than PHP's stock 128M default to unpack the
+# WordPress core tarball.
+RUN echo "memory_limit = 512M" > /usr/local/etc/php/conf.d/memory-limit.ini
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        unzip \
+        ca-certificates \
+        libsqlite3-dev \
+        less \
+    && docker-php-ext-install pdo_sqlite \
+    && apt-get purge -y --auto-remove libsqlite3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# WP-CLI
+RUN curl -fsSL -o /usr/local/bin/wp \
+        https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar \
+    && chmod +x /usr/local/bin/wp \
+    && wp cli version --allow-root
+
+WORKDIR /var/www/html
+
+# WordPress core.
+RUN wp core download --allow-root --locale=en_US
+
+# wp-config.php: dummy DB_* constants (unused once the SQLite drop-in takes
+# over), a site URL derived at runtime from the port this checkout was
+# assigned (so the same image works for any namespaced instance), and
+# WP_SQLITE_AST_DRIVER. That last one opts into the plugin's newer
+# grammar-based MySQL-on-SQLite translator instead of its legacy
+# regex-based one: Action Scheduler's claim query is an
+# `UPDATE t1 JOIN (subquery) t2 ... SET ...`, which the legacy translator
+# cannot rewrite for SQLite (`near "t1": syntax error`) but the AST driver
+# handles correctly. This is exactly the translation-layer risk this ticket
+# exists to settle -- see the "one scheduled action runs to completion"
+# verification below.
+RUN wp config create --allow-root \
+        --dbname=wordpress \
+        --dbuser=wordpress \
+        --dbpass=wordpress \
+        --dbhost=localhost \
+        --skip-check \
+        --extra-php="define( 'WP_HOME', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SITEURL', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SQLITE_AST_DRIVER', true );"
+
+# SQLite Database Integration: install the plugin, then place its db.php
+# drop-in directly. The drop-in's own fallback resolves the plugin folder
+# from its own location (wp-content/db.php -> wp-content/plugins/
+# sqlite-database-integration), so no placeholder rewriting is needed. This
+# is what makes wpdb talk to SQLite instead of the dummy MySQL credentials
+# above, from the very first request onward -- no runtime GET/nonce admin
+# flow required, which wouldn't be reachable headlessly anyway.
+RUN mkdir -p wp-content/plugins \
+    && curl -fsSL -o /tmp/sqlite-database-integration.zip \
+        https://downloads.wordpress.org/plugin/sqlite-database-integration.zip \
+    && unzip -q /tmp/sqlite-database-integration.zip -d wp-content/plugins \
+    && rm /tmp/sqlite-database-integration.zip \
+    && cp wp-content/plugins/sqlite-database-integration/db.copy wp-content/db.php
+
+# Action Scheduler, pinned via the ARG above and installed straight from the
+# project's own GitHub release asset (also distributed on WordPress.org, but
+# the GitHub release is the canonical, verifiable source for a tagged
+# version number).
+RUN curl -fsSL -o /tmp/action-scheduler.zip \
+        "https://github.com/woocommerce/action-scheduler/releases/download/${ACTION_SCHEDULER_VERSION}/action-scheduler.zip" \
+    && unzip -q /tmp/action-scheduler.zip -d wp-content/plugins \
+    && rm /tmp/action-scheduler.zip
+
+COPY router.php /var/www/html/router.php
+RUN mkdir -p wp-content/mu-plugins
+COPY mu-plugins/wpcas-poc-probe.php /var/www/html/wp-content/mu-plugins/wpcas-poc-probe.php
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Enough php-cli-server workers that a loopback request (e.g. the async
+# Action Scheduler dispatcher, or wp-cron.php's own admin-ajax loopback)
+# can be served by a second worker instead of deadlocking against the one
+# worker that is still waiting on its own response.
+ENV PHP_CLI_SERVER_WORKERS=6
+
+EXPOSE 8080
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
