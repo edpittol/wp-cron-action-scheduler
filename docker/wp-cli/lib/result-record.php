@@ -20,6 +20,22 @@ declare( strict_types=1 );
  * exit code or an HTTP status. Status is recorded because it's interesting
  * -- e.g. to notice a control that "succeeded" by its own exit code while
  * draining nothing -- not because it's evidence of what happened.
+ *
+ * Record shape, decided now (issue #4) because this schema is canonical --
+ * every later vector ticket in this series (#5/#6/#7) produces records
+ * through this same file, and #10 renders all of them:
+ *
+ *   - CLI-control row (this ticket's two controls): `command` is
+ *     `{argv, exit_code}`, `http_status` is `null` -- neither control makes
+ *     an HTTP request.
+ *   - HTTP-vector row (#5/#6/#7, not built here): `command` is `null`,
+ *     `http_status` is whatever the endpoint returned.
+ *
+ * Both fields are always present in the record (never omitted), and both
+ * are independently nullable -- a caller that genuinely has both a command
+ * and an HTTP status for one vector (e.g. an HTTP endpoint that itself
+ * shells out) is free to populate both; nothing here enforces exclusivity,
+ * it's just what this ticket's two rows happen to look like.
  */
 
 /**
@@ -55,9 +71,13 @@ function wpcas_result_compute_outcome( int $pending_before, int $pending_after, 
  * not something this repo invents. Splitting started/completed lets a
  * caller notice a context that started actions but never completed them.
  * Anything that doesn't match that shape (failures, ignored actions, or
- * any other AS log line) is kept verbatim under 'other' rather than
- * silently dropped -- a discarded log line is exactly the kind of quiet
- * data loss this ticket's evidence pipeline exists to avoid.
+ * any other AS log line, e.g. "action created") is counted under 'other'
+ * rather than silently dropped -- a discarded log line is exactly the kind
+ * of quiet data loss this ticket's evidence pipeline exists to avoid.
+ * Bucketed as a message -> count map, same shape as 'started'/'completed',
+ * rather than a verbatim list: a normal 50-action run produces 50 identical
+ * "action created" lines, and a count map carries that without repeating
+ * the same string 50 times in the record.
  *
  * @param string[] $messages
  */
@@ -74,7 +94,7 @@ function wpcas_result_summarize_execution_contexts( array $messages ): array {
 			$context               = $matches[1];
 			$completed[ $context ] = ( $completed[ $context ] ?? 0 ) + 1;
 		} else {
-			$other[] = $message;
+			$other[ $message ] = ( $other[ $message ] ?? 0 ) + 1;
 		}
 	}
 
@@ -90,10 +110,15 @@ function wpcas_result_summarize_execution_contexts( array $messages ): array {
  * WordPress/$wpdb/WP-CLI calls here -- everything this function needs is
  * passed in.
  *
+ * `command_argv`/`command_exit_code` are nullable together: pass both as
+ * `null` for an HTTP-vector row that has no command at all (see the module
+ * docblock above for the two row shapes this schema is designed to carry).
+ * This ticket's own two CLI controls always pass both non-null.
+ *
  * @param array{
  *     control: string,
- *     command_argv: string,
- *     command_exit_code: int,
+ *     command_argv: string|null,
+ *     command_exit_code: int|null,
  *     http_status: int|null,
  *     started_at: string,
  *     finished_at: string,
@@ -114,17 +139,24 @@ function wpcas_result_record_build( array $facts ): array {
 		count( $facts['probe_records'] )
 	);
 
-	return array(
-		'schema_version'      => 1,
-		'control'             => $facts['control'],
-		'command'             => array(
+	$command = null;
+	if ( null !== $facts['command_argv'] ) {
+		$command = array(
 			'argv'      => $facts['command_argv'],
 			'exit_code' => $facts['command_exit_code'],
-		),
-		// Neither CLI control in this ticket makes an HTTP request -- both
-		// run entirely in-process via WP-CLI. Kept as an explicit, always-
-		// present field (rather than omitted) so later, HTTP-triggered
-		// scenarios can populate it without changing the record shape.
+		);
+	}
+
+	return array(
+		// Bumped 1 -> 2 (issue #4 follow-up): `command` changed from
+		// always-present to nullable, to accommodate the HTTP-vector row
+		// shape #5/#6/#7 will produce (see the module docblock).
+		'schema_version'      => 2,
+		'control'             => $facts['control'],
+		'command'             => $command,
+		// Always present (never omitted), independent of `command` -- see
+		// the module docblock for why both fields exist and when each is
+		// populated.
 		'http_status'         => $facts['http_status'],
 		'started_at'          => $facts['started_at'],
 		'finished_at'         => $facts['finished_at'],

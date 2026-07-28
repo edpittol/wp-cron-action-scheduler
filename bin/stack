@@ -84,15 +84,34 @@ case "$cmd" in
         # survives `bin/stack down` and can be committed as evidence.
         #
         # measure.php sends everything *except* the final JSON record to
-        # STDERR on purpose (see its own docblock), so redirecting only
-        # this command's stdout to $outfile captures exactly the record,
-        # while progress/diagnostic output still reaches the terminal live.
+        # STDOUT/STDERR split on purpose (see its own docblock): the record
+        # goes to STDOUT and nothing else does, progress/diagnostics go to
+        # STDERR. That alone isn't enough to guarantee $outfile only ever
+        # holds a real record, though -- redirecting straight to $outfile
+        # would create/truncate it before measure.php even runs, so a
+        # preflight abort (non-zero exit, nothing on STDOUT) would still
+        # leave a 0-byte file behind that looks like a record at a glance.
+        # Write to a temp file in the same directory instead (so the final
+        # `mv` is a same-filesystem rename, not a copy) and only place it
+        # at $outfile once the command has actually exited 0; on failure,
+        # delete the temp file and propagate the exit code instead of
+        # leaving anything behind.
         control="${1:?Usage: $(basename "$0") measure <wp-cron|action-scheduler>}"
         mkdir -p "$REPO_ROOT/results"
         outfile="$REPO_ROOT/results/$(date -u +%Y%m%dT%H%M%SZ)-${control}.json"
-        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/measure.php "$control" --allow-root > "$outfile"
-        echo "" >&2
-        echo "Result record written to ${outfile}" >&2
+        tmpfile="$(mktemp "${outfile}.XXXXXX.tmp")"
+        rc=0
+        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/measure.php "$control" --allow-root > "$tmpfile" || rc=$?
+        if [ "$rc" -eq 0 ]; then
+            mv "$tmpfile" "$outfile"
+            echo "" >&2
+            echo "Result record written to ${outfile}" >&2
+        else
+            rm -f "$tmpfile"
+            echo "" >&2
+            echo "measure.php exited ${rc} -- no result record written (see the diagnostics above, e.g. a failed preflight)." >&2
+            exit "$rc"
+        fi
         ;;
     *)
         echo "Usage: $(basename "$0") {up|down|shell|exec|seed|reset|preflight|measure} [args...]" >&2

@@ -67,8 +67,21 @@ $messages = array(
 $summary = wpcas_result_summarize_execution_contexts( $messages );
 wpcas_test_assert_same( 'contexts: started WP Cron count', 2, $summary['started']['WP Cron'], $failures );
 wpcas_test_assert_same( 'contexts: completed WP Cron count', 2, $summary['completed']['WP Cron'], $failures );
-wpcas_test_assert_same( 'contexts: other count', 1, count( $summary['other'] ), $failures );
-wpcas_test_assert_same( 'contexts: other verbatim', 'some unrelated action-scheduler log line', $summary['other'][0], $failures );
+wpcas_test_assert_same( 'contexts: other is a count map, not a verbatim list', 1, count( $summary['other'] ), $failures );
+wpcas_test_assert_same(
+	'contexts: other message count',
+	1,
+	$summary['other']['some unrelated action-scheduler log line'],
+	$failures
+);
+
+// A message repeated many times (the normal case: N identical "action
+// created" lines for an N-action batch) is counted, not repeated N times
+// in the record -- this is exactly why 'other' is a count map.
+$repeated = array_fill( 0, 50, 'action created' );
+$summary  = wpcas_result_summarize_execution_contexts( $repeated );
+wpcas_test_assert_same( 'contexts: repeated other collapses to one key', 1, count( $summary['other'] ), $failures );
+wpcas_test_assert_same( 'contexts: repeated other count', 50, $summary['other']['action created'], $failures );
 
 // Mixed contexts in the same batch are split, not merged -- this is what
 // makes the two controls distinguishable in a single record shape.
@@ -109,7 +122,7 @@ $facts = array(
 
 $record = wpcas_result_record_build( $facts );
 
-wpcas_test_assert_same( 'record: schema_version', 1, $record['schema_version'], $failures );
+wpcas_test_assert_same( 'record: schema_version', 2, $record['schema_version'], $failures );
 wpcas_test_assert_same( 'record: control', 'wp-cron', $record['control'], $failures );
 wpcas_test_assert_same( 'record: command argv', 'wp cron event run --due-now', $record['command']['argv'], $failures );
 wpcas_test_assert_same( 'record: command exit_code', 0, $record['command']['exit_code'], $failures );
@@ -155,6 +168,25 @@ $facts_zero_exit_no_drain['probe_records']     = array();
 $record_zero_exit_no_drain                     = wpcas_result_record_build( $facts_zero_exit_no_drain );
 wpcas_test_assert_same( 'record: zero exit but no drain -- drained', 0, $record_zero_exit_no_drain['outcome']['drained'], $failures );
 wpcas_test_assert_same( 'record: zero exit but no drain -- fully_drained', false, $record_zero_exit_no_drain['outcome']['fully_drained'], $failures );
+
+// --- HTTP-vector row shape (issue #4 follow-up) -------------------------
+//
+// This ticket only ever builds CLI-control rows itself, but the schema is
+// canonical for #5/#6/#7's HTTP-triggered vectors too: `command_argv` and
+// `command_exit_code` both `null` in, `command` must come out `null` --
+// not an object with null members -- while `http_status` is carried
+// through untouched. Locking this down here so those tickets don't each
+// have to work out the null-handling for themselves.
+$http_vector_facts                     = $facts;
+$http_vector_facts['command_argv']     = null;
+$http_vector_facts['command_exit_code'] = null;
+$http_vector_facts['http_status']      = 200;
+$http_vector_facts['log_messages']     = array();
+$http_vector_facts['probe_records']    = array();
+$http_vector_record                    = wpcas_result_record_build( $http_vector_facts );
+wpcas_test_assert_same( 'http-vector row: command is null, not an object', null, $http_vector_record['command'], $failures );
+wpcas_test_assert_same( 'http-vector row: http_status carried through', 200, $http_vector_record['http_status'], $failures );
+wpcas_test_assert_same( 'http-vector row: schema_version unchanged', 2, $http_vector_record['schema_version'], $failures );
 
 if ( array() !== $failures ) {
 	fwrite( STDERR, "FAIL\n" );
