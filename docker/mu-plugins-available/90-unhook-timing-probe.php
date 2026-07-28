@@ -36,9 +36,14 @@ declare( strict_types=1 );
  *   5. init:101                    -- immediately after that same priority.
  *   6. wp_loaded:10                -- after 'init' has fully fired.
  *
- * Output: a JSON object on the response body (and the request is exited
- * there), so the measurement script can capture it with a single curl
- * call per guard state instead of scraping a log file.
+ * Output: a JSON object on the response body, emitted from a separate
+ * 'wp_loaded' priority-20 callback that runs after the stage-6 read above
+ * (and exits there), so the measurement script can capture the full set
+ * with a single curl call per guard state instead of scraping a log file.
+ * The read and the emit/exit are deliberately two different callbacks at
+ * two different priorities -- folding the emit into the same callback as
+ * the stage-6 read would make the 'wp_loaded:10' label a lie about its own
+ * priority.
  */
 
 if ( ! isset( $_GET['wpcas_probe'] ) ) {
@@ -106,7 +111,13 @@ add_action(
 	'wp_loaded',
 	static function () use ( $wpcas_probe_record ) {
 		$wpcas_probe_record( 'wp_loaded:10' );
+	},
+	10
+);
 
+add_action(
+	'wp_loaded',
+	static function () {
 		$GLOBALS['wpcas_probe_results']['action_scheduler_version'] = class_exists( 'ActionScheduler_Versions' )
 			? (string) ActionScheduler_Versions::instance()->latest_version()
 			: 'unknown';

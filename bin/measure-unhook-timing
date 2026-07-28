@@ -30,6 +30,9 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PROBE_SRC="$REPO_ROOT/docker/mu-plugins-available/90-unhook-timing-probe.php"
 PROBE_DEST="$REPO_ROOT/docker/mu-plugins/90-unhook-timing-probe.php"
 
+# Port derivation copy-pasted from bin/stack (not sourced, to keep this
+# script runnable standalone) -- if that formula ever changes, this one
+# must change with it, or this script will probe the wrong port.
 HASH="$(printf '%s' "$REPO_ROOT" | shasum -a 256 | cut -c1-8)"
 PORT=$(( 8500 + (16#$HASH % 400) ))
 BASE_URL="http://localhost:${PORT}/"
