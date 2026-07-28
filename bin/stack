@@ -12,7 +12,7 @@
 #   bin/stack up             # build (if needed) and start, print the URL
 #   bin/stack down [args...] # stop and remove containers
 #   bin/stack shell          # interactive shell in the wordpress container
-#   bin/stack exec -- <cmd>  # run <cmd> in the wordpress container (e.g. wp-cli)
+#   bin/stack exec <cmd>     # run <cmd> in the wordpress container (e.g. wp-cli)
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -20,12 +20,18 @@ COMPOSE_FILE="$REPO_ROOT/docker-compose.yml"
 
 # Hash the checkout path (not the branch, not the repo name) so every
 # separate working copy on this machine gets its own namespace.
+#
+# The port is only 400-wide (8500-8899), so two checkouts can still collide
+# probabilistically (~1-in-400 chance per pair) even though their hashes
+# differ. `docker compose up` fails loudly on a bind conflict rather than
+# silently sharing the port, so a collision is a re-run-`up`-after-noticing
+# problem, not a silent one -- fine for a local PoC, worth widening the
+# range or adding a bind-retry loop if this needs stronger guarantees.
 HASH="$(printf '%s' "$REPO_ROOT" | shasum -a 256 | cut -c1-8)"
 PORT=$(( 8500 + (16#$HASH % 400) ))
 
 export COMPOSE_PROJECT_NAME="wpcas-${HASH}"
 export STACK_PORT="$PORT"
-export STACK_HASH="$HASH"
 
 compose() {
     docker compose -f "$COMPOSE_FILE" "$@"

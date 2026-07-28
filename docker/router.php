@@ -1,4 +1,7 @@
 <?php
+
+declare( strict_types=1 );
+
 /**
  * Router for PHP's built-in web server.
  *
@@ -11,6 +14,16 @@
  * wp-login.php, or anything under wp-admin/); otherwise, including for
  * pretty-permalink paths that don't correspond to a file on disk, hand off
  * to the front controller.
+ *
+ * Known gap: nginx configs for WordPress normally add an explicit
+ * `location ~ /\.ht` (or similar) deny rule so dotfiles -- including the
+ * SQLite data file this stack keeps at wp-content/database/.ht.sqlite --
+ * are never served. This router has no equivalent: any existing file
+ * under the web root, dotfile or not, is handed to the built-in server as
+ * static content (see the is_file() branch below), so the live database
+ * is downloadable over HTTP. Acceptable for a localhost-only PoC; would
+ * need an explicit deny-by-path check here before this harness is used
+ * anywhere reachable beyond localhost.
  */
 
 $root = __DIR__;

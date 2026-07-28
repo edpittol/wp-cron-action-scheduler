@@ -2,8 +2,17 @@ FROM php:8.3-cli-bookworm
 
 # --- Single place the Action Scheduler version is pinned. -----------------
 # Every other reference in this image (the download URL, the label below)
-# is derived from this one build arg. Acceptance criterion: "Action
-# Scheduler 4.0.0 is active, with its version pinned in exactly one place."
+# is derived from this one build arg default. Acceptance criterion:
+# "Action Scheduler 4.0.0 is active, with its version pinned in exactly one
+# place." docker-compose.yml deliberately does NOT pass a build `args:`
+# value for this -- doing so would create a second source of truth that
+# could silently diverge from this default.
+#
+# Caveat: wp-content/database (the actual SQLite data file) is a named
+# volume so it survives `bin/stack down` / `up`, but everything else under
+# wp-content -- including this plugin directory -- is baked into the image
+# and is NOT volume-shadowed. That means a rebuild after bumping this ARG
+# does take effect on the next `up`, with no volume wipe required.
 ARG ACTION_SCHEDULER_VERSION=4.0.0
 ENV ACTION_SCHEDULER_VERSION=${ACTION_SCHEDULER_VERSION}
 LABEL org.opencontainers.image.description="WordPress (PHP built-in server + SQLite) with Action Scheduler ${ACTION_SCHEDULER_VERSION}"
@@ -44,6 +53,14 @@ RUN wp core download --allow-root --locale=en_US
 # handles correctly. This is exactly the translation-layer risk this ticket
 # exists to settle -- see the "one scheduled action runs to completion"
 # verification below.
+#
+# Residual risk: the AST driver is the plugin's newer, less battle-tested
+# translator (as opposed to the legacy regex-based one it defaults to).
+# Every later scenario built on this stack now rides on that translator's
+# fidelity for whatever queries Action Scheduler issues -- a future
+# "zero drained" result should not be read as settled without first ruling
+# out an AST-driver translation gap, the same way this ticket ruled out the
+# legacy translator's JOIN-UPDATE gap.
 RUN wp config create --allow-root \
         --dbname=wordpress \
         --dbuser=wordpress \
@@ -59,7 +76,7 @@ RUN wp config create --allow-root \
 # is what makes wpdb talk to SQLite instead of the dummy MySQL credentials
 # above, from the very first request onward -- no runtime GET/nonce admin
 # flow required, which wouldn't be reachable headlessly anyway.
-RUN mkdir -p wp-content/plugins \
+RUN mkdir -p wp-content/plugins wp-content/database \
     && curl -fsSL -o /tmp/sqlite-database-integration.zip \
         https://downloads.wordpress.org/plugin/sqlite-database-integration.zip \
     && unzip -q /tmp/sqlite-database-integration.zip -d wp-content/plugins \

@@ -1,4 +1,7 @@
 <?php
+
+declare( strict_types=1 );
+
 /**
  * Minimal, dependency-free callback used to prove the Action Scheduler +
  * SQLite integration end to end (see the "one scheduled action runs to
