@@ -11,16 +11,21 @@ declare( strict_types=1 );
  * performs must be reported, never silent" -- even when there was nothing
  * to remediate (reporting "0 found" is still a report, not silence).
  *
- * Usage: wp eval-file docker/wp-cli/reset.php [<seed-count>]
+ * Usage: wp eval-file docker/wp-cli/reset.php [<seed-count>] [due-now]
  *   <seed-count> defaults to WPCAS_PROBE_DEFAULT_SEED_COUNT (50).
+ *   due-now      (issue #4) re-seeds with actions due immediately instead
+ *                of issue #2's default ~5-minutes-in-the-future schedule
+ *                -- see docker/wp-cli/seed.php and wpcas_probe_seed() for
+ *                why. Required before measuring a due-now control.
  *
- * Invoked via `bin/stack reset [<seed-count>]`.
+ * Invoked via `bin/stack reset [<seed-count>] [due-now]`.
  */
 
 require __DIR__ . '/lib/probe.php';
 
 /** @var array<int, string> $args Positional args from `wp eval-file`. */
 $seed_count = isset( $args[0] ) ? (int) $args[0] : WPCAS_PROBE_DEFAULT_SEED_COUNT;
+$due_now    = isset( $args[1] ) && 'due-now' === $args[1];
 
 WP_CLI::log( 'Resetting the probe queue...' );
 
@@ -44,6 +49,6 @@ WP_CLI::log(
 $log_rows_deleted = wpcas_probe_clear_execution_log();
 WP_CLI::log( sprintf( 'Deleted %d probe execution-log row(s).', $log_rows_deleted ) );
 
-wpcas_probe_seed( $seed_count );
+wpcas_probe_seed( $seed_count, $due_now );
 
 WP_CLI::success( 'Reset complete.' );

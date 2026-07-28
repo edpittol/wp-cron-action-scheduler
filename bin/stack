@@ -13,9 +13,11 @@
 #   bin/stack down [args...]   # stop and remove containers
 #   bin/stack shell            # interactive shell in the wordpress container
 #   bin/stack exec <cmd>       # run <cmd> in the wordpress container (e.g. wp-cli)
-#   bin/stack seed [count]     # seed <count> (default 50) pending probe actions
-#   bin/stack reset [count]    # clear transient/claims/leftovers, then re-seed
-#   bin/stack preflight        # assert preconditions, emit a JSON snapshot
+#   bin/stack seed [count] [due-now]    # seed <count> (default 50) pending probe actions
+#   bin/stack reset [count] [due-now]   # clear transient/claims/leftovers, then re-seed
+#   bin/stack preflight                 # assert preconditions, emit a JSON snapshot
+#   bin/stack measure <control>         # run a CLI control, write a result record
+#                                        #   <control>: wp-cron | action-scheduler
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -76,16 +78,34 @@ case "$cmd" in
     preflight)
         compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/preflight.php "$@" --allow-root
         ;;
+    measure)
+        # Runs one CLI control (issue #4) and writes its result record to
+        # results/ on the host -- not just inside the container -- so it
+        # survives `bin/stack down` and can be committed as evidence.
+        #
+        # measure.php sends everything *except* the final JSON record to
+        # STDERR on purpose (see its own docblock), so redirecting only
+        # this command's stdout to $outfile captures exactly the record,
+        # while progress/diagnostic output still reaches the terminal live.
+        control="${1:?Usage: $(basename "$0") measure <wp-cron|action-scheduler>}"
+        mkdir -p "$REPO_ROOT/results"
+        outfile="$REPO_ROOT/results/$(date -u +%Y%m%dT%H%M%SZ)-${control}.json"
+        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/measure.php "$control" --allow-root > "$outfile"
+        echo "" >&2
+        echo "Result record written to ${outfile}" >&2
+        ;;
     *)
-        echo "Usage: $(basename "$0") {up|down|shell|exec|seed|reset|preflight} [args...]" >&2
-        echo "  up               build and start the stack" >&2
-        echo "  down             stop and remove the stack" >&2
-        echo "  shell            open a shell in the wordpress container" >&2
-        echo "  exec <cmd>       run <cmd> in the wordpress container, e.g.:" >&2
-        echo "                     bin/stack exec wp core is-installed" >&2
-        echo "  seed [count]     seed <count> (default 50) pending probe actions" >&2
-        echo "  reset [count]    clear transient/claims/leftovers, then re-seed" >&2
-        echo "  preflight        assert preconditions, emit a JSON snapshot" >&2
+        echo "Usage: $(basename "$0") {up|down|shell|exec|seed|reset|preflight|measure} [args...]" >&2
+        echo "  up                    build and start the stack" >&2
+        echo "  down                  stop and remove the stack" >&2
+        echo "  shell                 open a shell in the wordpress container" >&2
+        echo "  exec <cmd>            run <cmd> in the wordpress container, e.g.:" >&2
+        echo "                          bin/stack exec wp core is-installed" >&2
+        echo "  seed [count] [due-now]  seed <count> (default 50) pending probe actions" >&2
+        echo "  reset [count] [due-now] clear transient/claims/leftovers, then re-seed" >&2
+        echo "  preflight             assert preconditions, emit a JSON snapshot" >&2
+        echo "  measure <control>     run a CLI control, write a result record;" >&2
+        echo "                          <control>: wp-cron | action-scheduler" >&2
         exit 1
         ;;
 esac

@@ -1,0 +1,339 @@
+{
+    "schema_version": 1,
+    "control": "wp-cron",
+    "command": {
+        "argv": "wp cron event run --due-now",
+        "exit_code": 0
+    },
+    "http_status": null,
+    "started_at": "2026-07-28T18:26:24+00:00",
+    "finished_at": "2026-07-28T18:26:35+00:00",
+    "elapsed_seconds": 11.594259977340698,
+    "preflight": {
+        "ok": true,
+        "pending_count": 50,
+        "callback_attached": true,
+        "cron_in_progress": false,
+        "claims_count": 0,
+        "failures": []
+    },
+    "outcome": {
+        "pending_before": 50,
+        "pending_after": 0,
+        "drained": 50,
+        "fully_drained": true,
+        "probe_executions_observed": 50
+    },
+    "execution_contexts": {
+        "started": {
+            "WP Cron": 50
+        },
+        "completed": {
+            "WP Cron": 50
+        },
+        "other": [
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created",
+            "action created"
+        ]
+    },
+    "probe_records": [
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263184.373477
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263184.599899
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263184.82322
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263185.047402
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263185.271561
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263185.50019
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263185.724882
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263185.946533
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263186.166489
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263186.395115
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263186.621576
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263186.845479
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263187.066355
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263187.297144
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263187.522794
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263187.739539
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263187.962544
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263188.189328
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263188.410064
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263188.638627
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263188.858897
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263189.079013
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263189.302898
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263189.530795
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263189.749809
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263189.974899
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263190.206497
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263190.440418
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263190.667549
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263190.889883
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263191.112198
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263191.333312
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263191.559734
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263191.810784
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263192.038898
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263192.260316
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263192.479909
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263192.706931
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263192.93075
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263193.159832
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263193.390669
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263193.616781
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263193.837755
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263194.062007
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263194.284044
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263194.507416
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263194.72698
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263194.938271
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263195.151056
+        },
+        {
+            "sapi": "cli",
+            "pid": 143,
+            "timestamp": 1785263195.360104
+        }
+    ]
+}
