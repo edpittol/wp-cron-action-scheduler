@@ -17,6 +17,13 @@ declare( strict_types=1 );
  * Deliberately not gated on DOING_CRON, DISABLE_WP_CRON, or any other
  * constant: the point of a canary is to catch every non-CLI trigger,
  * including ones none of the other guards in this set happen to cover.
+ *
+ * The request URI and remote address are attacker-controlled input by
+ * definition -- this guard exists precisely to log hostile requests, so
+ * it cannot assume either field is well-formed. Both are stripped of
+ * control characters (including CR/LF) before being written out, so a
+ * crafted request can't forge extra log lines or otherwise inject
+ * content into the log stream via this guard.
  */
 
 add_action(
@@ -26,8 +33,12 @@ add_action(
 			return;
 		}
 
-		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? (string) $_SERVER['REQUEST_URI'] : 'n/a';
-		$remote_addr = isset( $_SERVER['REMOTE_ADDR'] ) ? (string) $_SERVER['REMOTE_ADDR'] : 'n/a';
+		$strip_control_chars = static function ( $value ) {
+			return (string) preg_replace( '/[\x00-\x1F\x7F]+/', ' ', (string) $value );
+		};
+
+		$request_uri = isset( $_SERVER['REQUEST_URI'] ) ? $strip_control_chars( $_SERVER['REQUEST_URI'] ) : 'n/a';
+		$remote_addr = isset( $_SERVER['REMOTE_ADDR'] ) ? $strip_control_chars( $_SERVER['REMOTE_ADDR'] ) : 'n/a';
 
 		error_log( // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
 			sprintf(

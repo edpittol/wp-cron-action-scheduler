@@ -94,6 +94,13 @@ RUN curl -fsSL -o /tmp/action-scheduler.zip \
 
 COPY router.php /var/www/html/router.php
 RUN mkdir -p wp-content/mu-plugins
+# docker-compose.yml bind-mounts docker/mu-plugins/ over this path at
+# runtime (so bin/guard can arm/disarm guard files without a rebuild), so
+# this COPY is shadowed and has no effect when the image is run via
+# `bin/stack`/`docker compose`. It only matters as a fallback for running
+# this image directly (e.g. plain `docker run`, no compose, no bind
+# mount) -- kept for that case, not because it does anything under the
+# normal `bin/stack up` path.
 COPY mu-plugins/wpcas-poc-probe.php /var/www/html/wp-content/mu-plugins/wpcas-poc-probe.php
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

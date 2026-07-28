@@ -66,14 +66,14 @@ cmd="${1:-}"
 
 case "$cmd" in
     arm)
-        mkdir -p "$ENABLED_DIR"
-
         for requested in "$@"; do
             if ! section_file "$requested" >/dev/null 2>&1; then
                 echo "error: unknown section '$requested' (valid: 1 2 3 4)" >&2
                 exit 1
             fi
         done
+
+        mkdir -p "$ENABLED_DIR"
 
         for n in 1 2 3 4; do
             file="$(section_file "$n")"
