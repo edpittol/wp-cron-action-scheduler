@@ -58,6 +58,13 @@ const WPCAS_PROBE_SEED_LEAD_SECONDS = 300;
  * control need exactly that risk to verify their own dispatch-control
  * story (see docker/wp-cli/measure.php), so it can't be designed away
  * here the way the default (not-due) path does.
+ *
+ * Issue #9 independently built the same seam for the same reason: a
+ * worker-occupancy measurement also needs a real drain in flight, which
+ * also needs actions that are actually due. #4 and #9 were parallel
+ * siblings on the same base branch that arrived at an identical
+ * `$due_now` parameter; issue #10 reconciled them into this single
+ * implementation (see issue #10's `## Decisions`).
  */
 function wpcas_probe_seed( int $count, bool $due_now = false ): void {
 	if ( $count < 1 ) {
@@ -271,6 +278,15 @@ function wpcas_probe_log_messages_for_actions( array $action_ids ): array {
  * check, from the guard actually doing its job. Cleared unconditionally
  * as part of getting a clean starting state for this vector, the same
  * spirit as wpcas_probe_clear_cron_transient() for WP-Cron's own lock.
+ *
+ * Issue #9 needed the exact same clear independently, for the same
+ * underlying reason: a lock left over from a previous occupancy run (or
+ * any other admin-context request that happened to dispatch one) would
+ * make a later drain-trigger request return fast without actually
+ * starting a drain -- indistinguishable, from the trigger response alone,
+ * from the real "returns almost instantly" behaviour that ticket measures.
+ * Issue #10 reconciled #7's and #9's independently-built versions of this
+ * function into this single implementation (see issue #10's `## Decisions`).
  *
  * Returns whether a lock was actually present beforehand, so callers can
  * report it rather than silently no-op.
