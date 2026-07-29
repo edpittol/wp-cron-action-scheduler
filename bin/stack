@@ -19,6 +19,10 @@
 #   bin/stack measure <control>         # run a CLI control, write a result record
 #                                        #   <control>: wp-cron | action-scheduler
 #   bin/stack measure-http <label>      # GET wp-cron.php, write a result record
+#   bin/stack measure-async-ajax <scenario-label>
+#                                        # POST an unauthenticated request to
+#                                        # Action Scheduler's async-request ajax
+#                                        # action (issue #6), write a result record
 #   bin/stack set-disable-wp-cron <true|false>
 #                                        # flip the DISABLE_WP_CRON constant at
 #                                        # runtime (issue #5) -- recreates the
@@ -137,6 +141,27 @@ case "$cmd" in
             exit "$rc"
         fi
         ;;
+    measure-async-ajax)
+        # Same file/temp-file/mv discipline as `measure` above, for issue
+        # #6's HTTP-vector script (measure-async-ajax.php) instead of a CLI
+        # control -- see that file's own docblock.
+        scenario="${1:?Usage: $(basename "$0") measure-async-ajax <scenario-label>}"
+        mkdir -p "$REPO_ROOT/results"
+        outfile="$REPO_ROOT/results/$(date -u +%Y%m%dT%H%M%SZ)-async-ajax-${scenario}.json"
+        tmpfile="$(mktemp "${outfile}.XXXXXX.tmp")"
+        rc=0
+        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/measure-async-ajax.php "$scenario" --allow-root > "$tmpfile" || rc=$?
+        if [ "$rc" -eq 0 ]; then
+            mv "$tmpfile" "$outfile"
+            echo "" >&2
+            echo "Result record written to ${outfile}" >&2
+        else
+            rm -f "$tmpfile"
+            echo "" >&2
+            echo "measure-async-ajax.php exited ${rc} -- no result record written (see the diagnostics above, e.g. a failed preflight or canary-writability self-test)." >&2
+            exit "$rc"
+        fi
+        ;;
     set-disable-wp-cron)
         # Issue #5: flips the DISABLE_WP_CRON constant without rebuilding
         # the image. wp-config.php (docker/Dockerfile) reads this env var
@@ -156,7 +181,7 @@ case "$cmd" in
         echo "DISABLE_WP_CRON is now ${value} (container recreated, image not rebuilt)." >&2
         ;;
     *)
-        echo "Usage: $(basename "$0") {up|down|shell|exec|seed|reset|preflight|measure|measure-http|set-disable-wp-cron} [args...]" >&2
+        echo "Usage: $(basename "$0") {up|down|shell|exec|seed|reset|preflight|measure|measure-http|measure-async-ajax|set-disable-wp-cron} [args...]" >&2
         echo "  up                    build and start the stack" >&2
         echo "  down                  stop and remove the stack" >&2
         echo "  shell                 open a shell in the wordpress container" >&2
@@ -168,6 +193,9 @@ case "$cmd" in
         echo "  measure <control>     run a CLI control, write a result record;" >&2
         echo "                          <control>: wp-cron | action-scheduler" >&2
         echo "  measure-http <label>  GET wp-cron.php unauthenticated, write a result record" >&2
+        echo "  measure-async-ajax <scenario-label>" >&2
+        echo "                        POST an unauthenticated request to the async-request" >&2
+        echo "                        ajax action, write a result record" >&2
         echo "  set-disable-wp-cron <true|false>" >&2
         echo "                        flip DISABLE_WP_CRON at runtime, no rebuild" >&2
         exit 1

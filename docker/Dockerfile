@@ -21,6 +21,23 @@ LABEL org.opencontainers.image.description="WordPress (PHP built-in server + SQL
 # WordPress core tarball.
 RUN echo "memory_limit = 512M" > /usr/local/etc/php/conf.d/memory-limit.ini
 
+# Issue #6's canary guard (docker/mu-plugins-available/30-log-non-cli-canary.php)
+# writes to PHP's error log. Left at its default, PHP's `error_log` ini
+# directive is empty, which for the built-in `php -S` server means every
+# error_log() call goes to the server process's own STDERR -- captured (if
+# at all) by whatever runs the container, not by any file this repo's
+# tooling can read back to confirm the canary actually fired. Pointing
+# `error_log` at a concrete, writable path here means the canary's
+# destination is a known file both the serving process (entrypoint's
+# `php -S`) and any `wp` CLI invocation (same php.ini/conf.d) write to and
+# can be read back from -- and, critically, something
+# docker/wp-cli/measure-async-ajax.php can *verify* is actually being
+# written to before trusting its silence or its content, rather than
+# assuming a destination that might quietly be going nowhere readable.
+RUN mkdir -p /var/log/wpcas \
+    && touch /var/log/wpcas/php-error.log \
+    && printf 'log_errors = On\nerror_log = /var/log/wpcas/php-error.log\n' > /usr/local/etc/php/conf.d/error-log.ini
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         unzip \
