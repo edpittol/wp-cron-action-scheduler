@@ -40,7 +40,18 @@ if ( null === $run_dir ) {
 		fwrite( STDERR, "generate-report: no run directories found under {$matrix_root}. Run bin/measure-matrix first.\n" );
 		exit( 1 );
 	}
-	usort( $candidates, static fn( string $a, string $b ): int => filemtime( $b ) <=> filemtime( $a ) );
+	// Sorted by basename, NOT filemtime: bin/measure-matrix names every run
+	// directory after the UTC timestamp it started (e.g. 20260729T174806Z,
+	// produced by `date -u +%Y%m%dT%H%M%SZ`), which is ISO-8601-shaped --
+	// lexicographic order on that string is exactly chronological order.
+	// filemtime() looked right locally but silently breaks after a fresh
+	// git clone: git sets every checked-out file's mtime to checkout time,
+	// so a repo with two committed runs would have both directories'
+	// mtimes collapse to (effectively) the same instant, making "newest by
+	// filemtime" non-deterministic -- exactly the kind of unverifiable
+	// selection this evidence pipeline exists to rule out. An explicit
+	// run-directory argument (below) always overrides this default.
+	rsort( $candidates );
 	$run_dir = $candidates[0];
 }
 $run_dir = rtrim( (string) $run_dir, '/' );
@@ -249,6 +260,17 @@ $md[] = '## Unhook timing table (issue #8)';
 $md[] = '';
 if ( null !== $unhook_timing && 'measured' === ( $unhook_timing['result_kind'] ?? null ) ) {
 	$md[] = sprintf( 'Action Scheduler version measured (this run): **%s**.', $unhook_timing['action_scheduler_version'] ?? 'unknown' );
+	$md[] = '';
+	// This table is a deliberate composite, not a single request's output --
+	// see bin/measure-unhook-timing's own docblock. Every row except
+	// `init:101` comes from request 1 (guard fully disarmed); `init:101`
+	// comes from request 2 (section 4 armed) instead, because that row is
+	// specifically about what the guard removes. Called out here, right
+	// above the table, because the raw JSON blocks printed below it show
+	// request 1's own `init:101` as "attached, priority 10" -- an
+	// apparent contradiction unless a reader already knows which row came
+	// from which request.
+	$md[] = '_Composite table: every row is from request 1 (guard disarmed) except `init:101`, which is from request 2 (section 4 armed) -- the one row this measurement needs the guard armed to observe. See the raw JSON for both requests below; request 1\'s own `init:101` reads "attached" there because the guard was not armed for that request._';
 	$md[] = '';
 	$md[] = trim( (string) ( $unhook_timing['table_markdown'] ?? '(table not captured)' ) );
 	$md[] = '';

@@ -75,6 +75,8 @@ Full started/completed/other breakdown per scenario, straight from each record's
 
 Action Scheduler version measured (this run): **4.0.0**.
 
+_Composite table: every row is from request 1 (guard disarmed) except `init:101`, which is from request 2 (section 4 armed) -- the one row this measurement needs the guard armed to observe. See the raw JSON for both requests below; request 1's own `init:101` reads "attached" there because the guard was not armed for that request._
+
 Action Scheduler version measured: 4.0.0
 
 | Stage | has_action(WP_CRON_HOOK) |
