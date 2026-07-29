@@ -41,6 +41,17 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="$REPO_ROOT/docker-compose.yml"
 
+# Issue #10: every `measure*` subcommand below writes its result record
+# under this directory. Defaults to the top-level results/ directory
+# (unchanged behaviour for every existing caller), but bin/measure-matrix
+# overrides it to results/matrix/ so a full matrix run's own fresh records
+# land in one dedicated place, never mixed in with the individual example
+# records #5/#6/#7 committed directly under results/ -- see bin/measure-matrix
+# and bin/generate-report's own docblocks, and issue #10's `## Decisions`,
+# for why that separation matters: the report renders results/matrix/
+# exclusively.
+RESULTS_DIR="${WPCAS_RESULTS_DIR:-$REPO_ROOT/results}"
+
 # Hash the checkout path (not the branch, not the repo name) so every
 # separate working copy on this machine gets its own namespace.
 #
@@ -294,8 +305,8 @@ case "$cmd" in
             usage_label="measure-http <label>"
         fi
         control="${1:?Usage: $(basename "$0") ${usage_label}}"
-        mkdir -p "$REPO_ROOT/results"
-        outfile="$REPO_ROOT/results/$(date -u +%Y%m%dT%H%M%SZ)-${control}.json"
+        mkdir -p "$RESULTS_DIR"
+        outfile="$RESULTS_DIR/$(date -u +%Y%m%dT%H%M%SZ)-${control}.json"
         tmpfile="$(mktemp "${outfile}.XXXXXX.tmp")"
         rc=0
         compose exec -T wordpress wp eval-file --use-include "$script" "$control" --allow-root > "$tmpfile" || rc=$?
@@ -315,8 +326,8 @@ case "$cmd" in
         # #6's HTTP-vector script (measure-async-ajax.php) instead of a CLI
         # control -- see that file's own docblock.
         scenario="${1:?Usage: $(basename "$0") measure-async-ajax <scenario-label>}"
-        mkdir -p "$REPO_ROOT/results"
-        outfile="$REPO_ROOT/results/$(date -u +%Y%m%dT%H%M%SZ)-async-ajax-${scenario}.json"
+        mkdir -p "$RESULTS_DIR"
+        outfile="$RESULTS_DIR/$(date -u +%Y%m%dT%H%M%SZ)-async-ajax-${scenario}.json"
         tmpfile="$(mktemp "${outfile}.XXXXXX.tmp")"
         rc=0
         compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/measure-async-ajax.php "$scenario" --allow-root > "$tmpfile" || rc=$?
@@ -336,8 +347,8 @@ case "$cmd" in
         # #7's authenticated-admin-page-load script instead of a CLI
         # control -- see that file's own docblock.
         scenario="${1:?Usage: $(basename "$0") measure-admin-page-load <scenario-label>}"
-        mkdir -p "$REPO_ROOT/results"
-        outfile="$REPO_ROOT/results/$(date -u +%Y%m%dT%H%M%SZ)-admin-page-load-${scenario}.json"
+        mkdir -p "$RESULTS_DIR"
+        outfile="$RESULTS_DIR/$(date -u +%Y%m%dT%H%M%SZ)-admin-page-load-${scenario}.json"
         tmpfile="$(mktemp "${outfile}.XXXXXX.tmp")"
         rc=0
         compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/measure-admin-page-load.php "$scenario" --allow-root > "$tmpfile" || rc=$?
@@ -357,8 +368,8 @@ case "$cmd" in
         # #7's authenticated-manual-run script instead of a CLI control --
         # see that file's own docblock.
         scenario="${1:?Usage: $(basename "$0") measure-manual-run <scenario-label>}"
-        mkdir -p "$REPO_ROOT/results"
-        outfile="$REPO_ROOT/results/$(date -u +%Y%m%dT%H%M%SZ)-manual-run-${scenario}.json"
+        mkdir -p "$RESULTS_DIR"
+        outfile="$RESULTS_DIR/$(date -u +%Y%m%dT%H%M%SZ)-manual-run-${scenario}.json"
         tmpfile="$(mktemp "${outfile}.XXXXXX.tmp")"
         rc=0
         compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/measure-manual-run.php "$scenario" --allow-root > "$tmpfile" || rc=$?

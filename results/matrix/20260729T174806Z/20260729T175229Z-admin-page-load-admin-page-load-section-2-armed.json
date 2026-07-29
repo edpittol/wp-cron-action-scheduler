@@ -1,0 +1,74 @@
+{
+  "schema_version": 3,
+  "control": "admin-page-load:admin-page-load-section-2-armed",
+  "command": null,
+  "http_status": 200,
+  "started_at": "2026-07-29T17:52:29+00:00",
+  "finished_at": "2026-07-29T17:53:00+00:00",
+  "elapsed_seconds": 30.898458003997803,
+  "preflight": {
+    "ok": true,
+    "pending_count": 50,
+    "callback_attached": true,
+    "cron_in_progress": false,
+    "claims_count": 0,
+    "failures": []
+  },
+  "cron_in_progress_after": false,
+  "outcome": {
+    "pending_before": 50,
+    "pending_after": 50,
+    "drained": 0,
+    "fully_drained": false,
+    "probe_executions_observed": 0
+  },
+  "execution_contexts": {
+    "started": [],
+    "completed": [],
+    "other": {
+      "action created": 50
+    }
+  },
+  "probe_records": [],
+  "canary_line": null,
+  "canary_fired": false,
+  "vector": {
+    "name": "authenticated-admin-page-load",
+    "target_url": "http://localhost:8785/wp-admin/plugins.php",
+    "authenticated_as": "admin",
+    "authenticated_user_id": 1,
+    "auth_method": "wp_set_auth_cookie() minted in-process (docker/wp-cli/lib/admin-auth.php) -- no password read, stored, or transmitted",
+    "transport_error": null
+  },
+  "settle_poll": {
+    "waited_seconds": 30.84408187866211,
+    "settled": false,
+    "timed_out": true,
+    "progress_observed": false
+  },
+  "canary_log_writability": {
+    "path": "/var/log/wpcas/php-error.log",
+    "verified_writable": true
+  },
+  "dispatch_decision": {
+    "reached": true,
+    "allowed": false
+  },
+  "guard_state": {
+    "armed_guard_files": {
+      "10-block-http-cron.php": false,
+      "20-suppress-async-dispatch.php": true,
+      "30-log-non-cli-canary.php": false,
+      "40-unhook-queue-runner.php": false
+    },
+    "canary_action_hook_registered": false
+  },
+  "matrix_context": {
+    "scenario_label": "admin-page-load-section-2-armed",
+    "armed_sections": [
+      2
+    ],
+    "disable_wp_cron": true,
+    "seed_count": 50
+  }
+}
