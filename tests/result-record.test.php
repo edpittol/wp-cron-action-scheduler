@@ -188,6 +188,38 @@ wpcas_test_assert_same( 'http-vector row: command is null, not an object', null,
 wpcas_test_assert_same( 'http-vector row: http_status carried through', 200, $http_vector_record['http_status'], $failures );
 wpcas_test_assert_same( 'http-vector row: schema_version unchanged', 2, $http_vector_record['schema_version'], $failures );
 
+// --- canary_line / canary_fired (issue #7) -------------------------------
+//
+// Additive, backward-compatible fields: every existing caller of this
+// function (measure.php's two CLI-control rows, measure-http.php's
+// HTTP-vector row) never passes 'canary_line' at all, so it must default
+// to null (and canary_fired to false) rather than raising a notice or
+// being silently omitted from the record -- both fields are always
+// present, same discipline as http_status/command.
+wpcas_test_assert_same( 'record without canary_line: defaults to null', null, $record['canary_line'], $failures );
+wpcas_test_assert_same( 'record without canary_line: canary_fired defaults to false', false, $record['canary_fired'], $failures );
+
+// The headline case a fired canary produces: the line is carried through
+// verbatim, and canary_fired flips to true alongside it.
+$facts_with_canary                = $http_vector_facts;
+$facts_with_canary['canary_line'] = '[cron-guard] queue run outside CLI: sapi=cli-server uri=/wp-admin/index.php ip=127.0.0.1';
+$record_with_canary               = wpcas_result_record_build( $facts_with_canary );
+wpcas_test_assert_same( 'record with canary_line: passed through verbatim', $facts_with_canary['canary_line'], $record_with_canary['canary_line'], $failures );
+wpcas_test_assert_same( 'record with canary_line: canary_fired is true', true, $record_with_canary['canary_fired'], $failures );
+
+// This ticket's own headline negative case (the manual-run vector, which
+// calls process_action() directly and never runs the queue hook the
+// canary listens on): a record that explicitly passes canary_line as null
+// must report canary_fired === false, not merely omit the field -- this
+// is what lets a reader trust "the canary did not fire" instead of
+// mistaking a missing field for an oversight.
+$facts_manual_run_no_canary                = $http_vector_facts;
+$facts_manual_run_no_canary['control']     = 'manual-run:sections-1-2-3-4-armed';
+$facts_manual_run_no_canary['canary_line'] = null;
+$record_manual_run_no_canary               = wpcas_result_record_build( $facts_manual_run_no_canary );
+wpcas_test_assert_same( 'manual-run row: canary_line is null', null, $record_manual_run_no_canary['canary_line'], $failures );
+wpcas_test_assert_same( 'manual-run row: canary_fired is false', false, $record_manual_run_no_canary['canary_fired'], $failures );
+
 if ( array() !== $failures ) {
 	fwrite( STDERR, "FAIL\n" );
 	foreach ( $failures as $failure ) {

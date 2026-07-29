@@ -247,6 +247,109 @@ function wpcas_probe_log_messages_for_actions( array $action_ids ): array {
 }
 
 /**
+ * Clears Action Scheduler's own "async-request-runner" throttle lock
+ * (`ActionScheduler_OptionLock`, stored as the autoloaded option
+ * `action_scheduler_lock_async-request-runner`, 60 seconds by default --
+ * see ActionScheduler_QueueRunner::maybe_dispatch_async_request() /
+ * ActionScheduler_OptionLock::set() in the action-scheduler plugin).
+ *
+ * Discovered while building issue #7's admin-page-load vector: that
+ * dispatch check (`is_admin() && ! is_locked(...) && set(...)`) only
+ * *attempts* a dispatch at most once every 60 seconds, regardless of how
+ * many admin page loads happen in between. A lock left over from a
+ * previous run (this ticket's own repeated preflight/reset/measure
+ * cycles, run from the same container within that window) would make an
+ * otherwise-eligible "unarmed" run silently skip its own dispatch and
+ * report a false "nothing drained" -- indistinguishable, without this
+ * check, from the guard actually doing its job. Cleared unconditionally
+ * as part of getting a clean starting state for this vector, the same
+ * spirit as wpcas_probe_clear_cron_transient() for WP-Cron's own lock.
+ *
+ * Returns whether a lock was actually present beforehand, so callers can
+ * report it rather than silently no-op.
+ */
+function wpcas_probe_clear_async_dispatch_lock(): bool {
+	global $wpdb;
+
+	$lock_key = 'action_scheduler_lock_async-request-runner';
+
+	$existing = $wpdb->get_var(
+		$wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $lock_key )
+	);
+
+	if ( null === $existing || '' === $existing ) {
+		return false;
+	}
+
+	$wpdb->delete( $wpdb->options, array( 'option_name' => $lock_key ) );
+
+	return true;
+}
+
+/**
+ * Polls wpcas_probe_pending_count() until it stops changing across
+ * $stable_reads_required consecutive checks (or hits zero), for up to
+ * $max_wait_seconds of wall-clock time in total.
+ *
+ * Exists because Action Scheduler's async-loopback dispatch (see
+ * docker/mu-plugins-available/20-suppress-async-dispatch.php, and
+ * ActionScheduler_AsyncRequest_QueueRunner::maybe_dispatch() /
+ * WP_Async_Request::dispatch() in the plugin itself) is deliberately
+ * fire-and-forget from the *dispatching* request's own point of view --
+ * WP_Async_Request::dispatch() sends its loopback POST with a sub-second
+ * timeout by design, precisely so the page load that triggers it isn't
+ * held up waiting for a full queue drain. The triggering HTTP request
+ * this measurement makes (see docker/wp-cli/measure-admin-page-load.php)
+ * therefore returns long before the loopback's own processing -- a
+ * second, genuinely separate request against this same server -- has had
+ * a chance to finish. Reading pending_after immediately after the
+ * triggering request returns would misreport an in-flight (or
+ * not-yet-started) drain as "0 drained", which is exactly the kind of
+ * false result this ticket's evidence pipeline exists to catch.
+ *
+ * Also correct, and cheap, for the "nothing is ever going to drain"
+ * case (the dispatch guard armed, or the manual-run vector's single
+ * synchronous action): the pending count stabilises immediately, so
+ * polling exits after $stable_reads_required quick reads rather than
+ * always waiting out the full $max_wait_seconds.
+ *
+ * @return array{pending: int, settled: bool, timed_out: bool, waited_seconds: float}
+ */
+function wpcas_probe_poll_until_settled( int $max_wait_seconds, int $poll_interval_seconds = 1, int $stable_reads_required = 3 ): array {
+	$start    = microtime( true );
+	$deadline = $start + $max_wait_seconds;
+
+	$last   = wpcas_probe_pending_count();
+	$stable = 1;
+
+	while ( true ) {
+		if ( 0 === $last || $stable >= $stable_reads_required ) {
+			return array(
+				'pending'        => $last,
+				'settled'        => true,
+				'timed_out'      => false,
+				'waited_seconds' => microtime( true ) - $start,
+			);
+		}
+
+		if ( microtime( true ) >= $deadline ) {
+			return array(
+				'pending'        => $last,
+				'settled'        => false,
+				'timed_out'      => true,
+				'waited_seconds' => microtime( true ) - $start,
+			);
+		}
+
+		sleep( $poll_interval_seconds );
+
+		$current = wpcas_probe_pending_count();
+		$stable  = ( $current === $last ) ? $stable + 1 : 1;
+		$last    = $current;
+	}
+}
+
+/**
  * Every per-execution record the probe callback wrote (see
  * wpcas_probe_record_execution() in the mu-plugin) -- "the probe's own
  * records" the result record (issue #4) is required to carry, independent

@@ -36,6 +36,24 @@ declare( strict_types=1 );
  * and an HTTP status for one vector (e.g. an HTTP endpoint that itself
  * shells out) is free to populate both; nothing here enforces exclusivity,
  * it's just what this ticket's two rows happen to look like.
+ *
+ * `canary_line` / `canary_fired` (added by issue #7, additive/backward-
+ * compatible): the section-3 canary guard's own log line, when one fired
+ * -- see docker/wp-cli/lib/canary.php for how it's parsed out of PHP's
+ * error log, and docker/wp-cli/measure-admin-page-load.php /
+ * measure-manual-run.php for how that destination is verified writable
+ * before being trusted. Optional in the input facts (defaults to `null`)
+ * so every caller that never passes it (this ticket's own two CLI-control
+ * rows, plus #5's HTTP-vector row) keeps working unchanged; always present
+ * in the output, same discipline as `http_status`/`command`. `canary_fired`
+ * is derived (`null !== canary_line`), not a separate input, so the two
+ * can never disagree -- kept as its own boolean anyway (rather than making
+ * callers infer it from nullability) because issue #7's manual-run vector
+ * needs to state plainly, in the record itself, that the canary did NOT
+ * fire on that path -- a documented blind spot (that vector calls
+ * ActionScheduler_QueueRunner::process_action() directly, bypassing run()
+ * and the 'action_scheduler_before_process_queue' hook the canary listens
+ * on), not evidence of full coverage.
  */
 
 /**
@@ -128,6 +146,7 @@ function wpcas_result_summarize_execution_contexts( array $messages ): array {
  *     pending_after: int,
  *     log_messages: string[],
  *     probe_records: array<int, array{sapi: string, pid: int, timestamp: float}>,
+ *     canary_line?: string|null,
  * } $facts
  *
  * @return array<string, mixed>
@@ -147,6 +166,8 @@ function wpcas_result_record_build( array $facts ): array {
 		);
 	}
 
+	$canary_line = $facts['canary_line'] ?? null;
+
 	return array(
 		// Bumped 1 -> 2 (issue #4 follow-up): `command` changed from
 		// always-present to nullable, to accommodate the HTTP-vector row
@@ -165,5 +186,12 @@ function wpcas_result_record_build( array $facts ): array {
 		'outcome'             => $outcome,
 		'execution_contexts'  => wpcas_result_summarize_execution_contexts( $facts['log_messages'] ),
 		'probe_records'       => $facts['probe_records'],
+		// Optional in the input facts (see the module docblock); always
+		// present in the output, `null` when no canary fired/applies.
+		'canary_line'         => $canary_line,
+		// Derived, never a separate input -- see the module docblock for
+		// why this is still carried as its own boolean rather than left
+		// for a reader to infer from `canary_line`'s nullability.
+		'canary_fired'        => null !== $canary_line,
 	);
 }

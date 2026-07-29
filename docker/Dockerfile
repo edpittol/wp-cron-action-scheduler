@@ -21,6 +21,23 @@ LABEL org.opencontainers.image.description="WordPress (PHP built-in server + SQL
 # WordPress core tarball.
 RUN echo "memory_limit = 512M" > /usr/local/etc/php/conf.d/memory-limit.ini
 
+# Issue #7's manual-run vector needs to confirm the section-3 canary guard
+# (docker/mu-plugins-available/30-log-non-cli-canary.php) genuinely does
+# NOT fire on that path -- a documented blind spot, not an assumption. PHP's
+# `error_log` ini directive is empty by default, which for the built-in
+# `php -S` server means every error_log() call goes to the server
+# process's own STDERR -- not a destination this repo's tooling can read
+# back to confirm silence versus "fired somewhere unread". Pointing
+# `error_log` at a concrete, writable path here means both the serving
+# process (entrypoint's `php -S`) and any `wp` CLI invocation (same
+# php.ini/conf.d) write to, and can read back from, the same file --
+# something docker/wp-cli/measure-admin-page-load.php and
+# measure-manual-run.php can verify is actually writable before trusting
+# it either way.
+RUN mkdir -p /var/log/wpcas \
+    && touch /var/log/wpcas/php-error.log \
+    && printf 'log_errors = On\nerror_log = /var/log/wpcas/php-error.log\n' > /usr/local/etc/php/conf.d/error-log.ini
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         unzip \
