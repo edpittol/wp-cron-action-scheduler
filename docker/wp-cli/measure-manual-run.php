@@ -51,6 +51,25 @@ declare( strict_types=1 );
  * Invoked via `bin/stack measure-manual-run <scenario-label>`, which
  * captures this script's stdout (the JSON record, and nothing else) to a
  * file under results/, same contract as `bin/stack measure`.
+ *
+ * Guard state (review follow-up): the record's `guard_state` field lists
+ * which of the four guard files were actually present under
+ * wp-content/mu-plugins/ for this run (see wpcas_probe_guard_state() in
+ * lib/probe.php), plus whether the section-3 canary's action hook was
+ * actually registered. Without this, a reader of a null `canary_line`
+ * here can't tell "armed but blind to this path" (this vector's real,
+ * documented finding) apart from "never armed in the first place" (which
+ * would make that finding meaningless) -- this field is what makes that
+ * distinction provable from the record itself.
+ *
+ * Dispatch-decision evidence: this manual-run request is still, itself,
+ * an authenticated wp-admin page load underneath, so it also passes
+ * through Action Scheduler's own is_admin()-gated async-dispatch decision
+ * point (see measure-admin-page-load.php's own docblock for the full
+ * explanation). Recording it here too corroborates *why* this run drains
+ * exactly one action and not more: the section-2 guard (armed for this
+ * scenario) vetoes that dispatch as well, not just the one this script
+ * intentionally triggers via the row-action link.
  */
 
 require __DIR__ . '/lib/probe.php';
@@ -144,6 +163,15 @@ if ( array() === $action_ids ) {
 $lock_was_set = wpcas_probe_clear_async_dispatch_lock();
 fwrite( STDERR, sprintf( "Async-dispatch throttle lock: %s.\n", $lock_was_set ? 'was set, cleared' : 'was not set' ) );
 
+// Clear any stale dispatch-decision evidence from a previous run -- see
+// this file's own docblock and docker/mu-plugins/wpcas-dispatch-decision-probe.php.
+wpcas_probe_reset_dispatch_decision();
+
+// Positive evidence of what was actually armed for this run -- see this
+// file's own docblock and wpcas_probe_guard_state() in lib/probe.php.
+$guard_state = wpcas_probe_guard_state();
+fwrite( STDERR, 'Guard state: ' . wp_json_encode( $guard_state ) . "\n" );
+
 // Exactly one action, chosen deterministically (lowest ID = earliest
 // seeded) so this script's own behaviour doesn't depend on iteration
 // order of anything Action Scheduler returns.
@@ -226,25 +254,38 @@ if ( is_wp_error( $response ) ) {
 // process_row_actions() handles -- no async loopback involved on this
 // path (contrast measure-admin-page-load.php) -- so a short settle poll
 // is enough; it is expected to report already-settled on its very first
-// read.
-$poll = wpcas_probe_poll_until_settled( 10 );
+// read. $pending_before is passed in per wpcas_probe_poll_until_settled()'s
+// updated signature (review follow-up) -- see that function's own
+// docblock.
+$poll = wpcas_probe_poll_until_settled( $pending_before, 10 );
 
 fwrite(
 	STDERR,
 	sprintf(
-		"Poll finished after %.3fs (settled=%s, timed_out=%s): pending=%d.\n",
+		"Poll finished after %.3fs (settled=%s, timed_out=%s, progress_observed=%s): pending=%d.\n",
 		$poll['waited_seconds'],
 		$poll['settled'] ? 'true' : 'false',
 		$poll['timed_out'] ? 'true' : 'false',
+		$poll['progress_observed'] ? 'true' : 'false',
 		$poll['pending']
 	)
 );
 
 // --- Capture post-run state ------------------------------------------------
 
-$pending_after = $poll['pending'];
-$log_messages  = wpcas_probe_log_messages_for_actions( $action_ids );
-$probe_records = wpcas_probe_execution_log_entries();
+$pending_after     = $poll['pending'];
+$log_messages      = wpcas_probe_log_messages_for_actions( $action_ids );
+$probe_records     = wpcas_probe_execution_log_entries();
+$dispatch_decision = wpcas_probe_read_dispatch_decision();
+
+fwrite(
+	STDERR,
+	sprintf(
+		"Dispatch decision (this page load's own, separate from the targeted manual run): reached=%s, allowed=%s.\n",
+		$dispatch_decision['reached'] ? 'true' : 'false',
+		null === $dispatch_decision['allowed'] ? 'n/a' : ( $dispatch_decision['allowed'] ? 'true' : 'false' )
+	)
+);
 
 // Canary: read only what was appended to the log during this run. Expected
 // to be empty for this vector -- see this file's own docblock.
@@ -314,6 +355,23 @@ $record['canary_log_writability'] = array(
 	'path'              => $canary_log_path,
 	'verified_writable' => $log_writable,
 );
+// Settle-poll diagnostics, same shape as measure-admin-page-load.php's
+// record -- expected to show progress_observed=true almost immediately
+// here, since process_action() runs synchronously within the same
+// request (contrast the fire-and-forget loopback that vector polls for).
+$record['settle_poll']            = array(
+	'waited_seconds'    => $poll['waited_seconds'],
+	'settled'           => $poll['settled'],
+	'timed_out'         => $poll['timed_out'],
+	'progress_observed' => $poll['progress_observed'],
+);
+// Positive evidence of what was actually armed for this run -- this is
+// what lets "canary did not fire" be read as "armed but blind to this
+// path" rather than "never armed" -- see this file's own docblock.
+$record['guard_state']            = $guard_state;
+// This page load's own dispatch decision (separate from the row-action
+// run this script targets) -- see this file's own docblock.
+$record['dispatch_decision']      = $dispatch_decision;
 
 fwrite(
 	STDERR,

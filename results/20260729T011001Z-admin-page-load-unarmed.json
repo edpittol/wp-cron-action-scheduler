@@ -3,9 +3,9 @@
     "control": "admin-page-load:unarmed",
     "command": null,
     "http_status": 200,
-    "started_at": "2026-07-29T00:46:09+00:00",
-    "finished_at": "2026-07-29T00:46:22+00:00",
-    "elapsed_seconds": 12.962718963623047,
+    "started_at": "2026-07-29T01:10:02+00:00",
+    "finished_at": "2026-07-29T01:10:14+00:00",
+    "elapsed_seconds": 12.58434510231018,
     "preflight": {
         "ok": true,
         "pending_count": 50,
@@ -35,253 +35,253 @@
     "probe_records": [
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285971.436457
+            "pid": 1,
+            "timestamp": 1785287402.888911
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285971.657987
+            "pid": 1,
+            "timestamp": 1785287403.112751
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285971.880271
+            "pid": 1,
+            "timestamp": 1785287403.335423
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285972.106711
+            "pid": 1,
+            "timestamp": 1785287403.542129
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285972.334385
+            "pid": 1,
+            "timestamp": 1785287403.758524
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285972.551772
+            "pid": 1,
+            "timestamp": 1785287403.974337
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285972.777398
+            "pid": 1,
+            "timestamp": 1785287404.190062
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285972.999303
+            "pid": 1,
+            "timestamp": 1785287404.415276
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285973.226637
+            "pid": 1,
+            "timestamp": 1785287404.632089
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285973.451783
+            "pid": 1,
+            "timestamp": 1785287404.851937
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285973.674396
+            "pid": 1,
+            "timestamp": 1785287405.074886
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285973.901004
+            "pid": 1,
+            "timestamp": 1785287405.301604
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285974.126423
+            "pid": 1,
+            "timestamp": 1785287405.527315
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285974.350152
+            "pid": 1,
+            "timestamp": 1785287405.755279
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285974.575663
+            "pid": 1,
+            "timestamp": 1785287405.980888
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285974.796146
+            "pid": 1,
+            "timestamp": 1785287406.203879
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285975.023647
+            "pid": 1,
+            "timestamp": 1785287406.429617
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285975.254623
+            "pid": 1,
+            "timestamp": 1785287406.652323
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285975.487341
+            "pid": 1,
+            "timestamp": 1785287406.872678
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285975.712415
+            "pid": 1,
+            "timestamp": 1785287407.095025
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285975.944988
+            "pid": 1,
+            "timestamp": 1785287407.31681
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285976.16901
+            "pid": 1,
+            "timestamp": 1785287407.537624
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285976.396718
+            "pid": 1,
+            "timestamp": 1785287407.758211
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285976.611204
+            "pid": 1,
+            "timestamp": 1785287407.980267
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285976.836044
+            "pid": 1,
+            "timestamp": 1785287408.202001
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285977.068982
+            "pid": 1,
+            "timestamp": 1785287408.423519
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285977.293632
+            "pid": 1,
+            "timestamp": 1785287408.645484
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285977.512286
+            "pid": 1,
+            "timestamp": 1785287408.877799
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285977.731686
+            "pid": 1,
+            "timestamp": 1785287409.107397
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285977.95449
+            "pid": 1,
+            "timestamp": 1785287409.330432
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285978.177328
+            "pid": 1,
+            "timestamp": 1785287409.560677
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285978.39916
+            "pid": 1,
+            "timestamp": 1785287409.783261
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285978.623679
+            "pid": 1,
+            "timestamp": 1785287409.99819
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285978.848571
+            "pid": 1,
+            "timestamp": 1785287410.219349
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285979.071621
+            "pid": 1,
+            "timestamp": 1785287410.457423
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285979.29372
+            "pid": 1,
+            "timestamp": 1785287410.680379
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285979.515408
+            "pid": 1,
+            "timestamp": 1785287410.898933
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285979.735372
+            "pid": 1,
+            "timestamp": 1785287411.120569
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285979.959604
+            "pid": 1,
+            "timestamp": 1785287411.372267
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285980.182086
+            "pid": 1,
+            "timestamp": 1785287411.596301
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285980.406128
+            "pid": 1,
+            "timestamp": 1785287411.815886
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285980.625279
+            "pid": 1,
+            "timestamp": 1785287412.042479
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285980.846501
+            "pid": 1,
+            "timestamp": 1785287412.271223
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285981.112937
+            "pid": 1,
+            "timestamp": 1785287412.510591
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285981.335925
+            "pid": 1,
+            "timestamp": 1785287412.771513
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285981.552727
+            "pid": 1,
+            "timestamp": 1785287412.983448
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285981.776517
+            "pid": 1,
+            "timestamp": 1785287413.206072
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285982.008919
+            "pid": 1,
+            "timestamp": 1785287413.429088
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285982.238341
+            "pid": 1,
+            "timestamp": 1785287413.65208
         },
         {
             "sapi": "cli-server",
-            "pid": 13,
-            "timestamp": 1785285982.461171
+            "pid": 1,
+            "timestamp": 1785287413.871523
         }
     ],
     "canary_line": null,
@@ -295,12 +295,26 @@
         "transport_error": null
     },
     "settle_poll": {
-        "waited_seconds": 10.295008897781372,
+        "waited_seconds": 11.263788223266602,
         "settled": true,
-        "timed_out": false
+        "timed_out": false,
+        "progress_observed": true
     },
     "canary_log_writability": {
         "path": "/var/log/wpcas/php-error.log",
         "verified_writable": true
+    },
+    "dispatch_decision": {
+        "reached": true,
+        "allowed": true
+    },
+    "guard_state": {
+        "armed_guard_files": {
+            "10-block-http-cron.php": false,
+            "20-suppress-async-dispatch.php": false,
+            "30-log-non-cli-canary.php": false,
+            "40-unhook-queue-runner.php": false
+        },
+        "canary_action_hook_registered": false
     }
 }

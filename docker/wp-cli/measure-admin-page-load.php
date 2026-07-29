@@ -40,12 +40,34 @@ declare( strict_types=1 );
  * -- this script's own GET returns long before that second, separate
  * request has necessarily finished draining anything. pending_after is
  * therefore read from a bounded poll, not immediately after the GET
- * returns.
+ * returns. That poll only accepts a fast "0 drained" conclusion once it
+ * has positively observed *some* progress and then stability -- with no
+ * progress at all it holds out for the full wait, so a genuinely
+ * dispatched-but-slow-to-start loopback can't be mistaken for
+ * suppression (see that function's own docblock for the review finding
+ * that prompted this).
+ *
+ * Dispatch-decision evidence (review follow-up): "0 drained" alone
+ * doesn't distinguish "the guard vetoed a real dispatch attempt" from
+ * "the dispatch check never ran at all" (e.g. a stale throttle lock).
+ * docker/mu-plugins/wpcas-dispatch-decision-probe.php observes Action
+ * Scheduler's own 'action_scheduler_allow_async_request_runner' filter
+ * (read-only -- it returns the value unchanged) and this script reads
+ * that observation back as `dispatch_decision` in the record:
+ * `{reached: bool, allowed: bool|null}`. `reached: true` means Action
+ * Scheduler's dispatch check ran on this request at all; `allowed`
+ * carries whatever value survived every filter on that hook, i.e. the
+ * section-2 guard's own effect when it's armed.
  *
  * Canary log destination: verified writable via the same round-trip
  * self-test as issue #6's measure-async-ajax.php, not assumed -- an
  * unwritable/misconfigured destination looks identical to "no canary
  * fired" unless this is checked explicitly.
+ *
+ * Guard state: `guard_state` in the record lists which of the four guard
+ * files were actually present under wp-content/mu-plugins/ for this run
+ * (see wpcas_probe_guard_state() in lib/probe.php) -- positive evidence
+ * of what was armed, not just the scenario label's say-so.
  *
  * Usage: wp eval-file docker/wp-cli/measure-admin-page-load.php <scenario-label>
  *   <scenario-label>  free-text tag for which guards are armed this run
@@ -133,6 +155,16 @@ $action_ids     = wpcas_probe_pending_action_ids();
 $lock_was_set = wpcas_probe_clear_async_dispatch_lock();
 fwrite( STDERR, sprintf( "Async-dispatch throttle lock: %s.\n", $lock_was_set ? 'was set, cleared' : 'was not set' ) );
 
+// Clear any stale dispatch-decision evidence from a previous run before
+// this one's triggering request -- see this file's own docblock and
+// docker/mu-plugins/wpcas-dispatch-decision-probe.php.
+wpcas_probe_reset_dispatch_decision();
+
+// Positive evidence of what was actually armed for this run -- see this
+// file's own docblock and wpcas_probe_guard_state() in lib/probe.php.
+$guard_state = wpcas_probe_guard_state();
+fwrite( STDERR, 'Guard state: ' . wp_json_encode( $guard_state ) . "\n" );
+
 // --- Mint the admin session, no password stored or transmitted -----------
 
 $session = wpcas_admin_mint_session( 'admin' );
@@ -201,7 +233,10 @@ fwrite(
 // See wpcas_probe_poll_until_settled()'s own docblock: the dispatch this
 // page load may have triggered is fire-and-forget, so pending_after is
 // read from a bounded poll, not immediately after the GET above returns.
-$poll = wpcas_probe_poll_until_settled( 30 );
+// $pending_before is passed in so the poll can tell "never moved" apart
+// from "moved and then stabilised" -- only the latter is allowed to exit
+// early.
+$poll = wpcas_probe_poll_until_settled( $pending_before, 30 );
 
 $elapsed_seconds = microtime( true ) - $start_time;
 $finished_at     = gmdate( 'c' );
@@ -209,17 +244,28 @@ $finished_at     = gmdate( 'c' );
 fwrite(
 	STDERR,
 	sprintf(
-		"Poll finished after %.3fs (settled=%s, timed_out=%s): pending=%d.\n",
+		"Poll finished after %.3fs (settled=%s, timed_out=%s, progress_observed=%s): pending=%d.\n",
 		$poll['waited_seconds'],
 		$poll['settled'] ? 'true' : 'false',
 		$poll['timed_out'] ? 'true' : 'false',
+		$poll['progress_observed'] ? 'true' : 'false',
 		$poll['pending']
 	)
 );
 
-$pending_after = $poll['pending'];
-$log_messages  = wpcas_probe_log_messages_for_actions( $action_ids );
-$probe_records = wpcas_probe_execution_log_entries();
+$pending_after     = $poll['pending'];
+$log_messages      = wpcas_probe_log_messages_for_actions( $action_ids );
+$probe_records     = wpcas_probe_execution_log_entries();
+$dispatch_decision = wpcas_probe_read_dispatch_decision();
+
+fwrite(
+	STDERR,
+	sprintf(
+		"Dispatch decision: reached=%s, allowed=%s.\n",
+		$dispatch_decision['reached'] ? 'true' : 'false',
+		null === $dispatch_decision['allowed'] ? 'n/a' : ( $dispatch_decision['allowed'] ? 'true' : 'false' )
+	)
+);
 
 // Canary: read only what was appended to the log during this run.
 clearstatcache( true, $canary_log_path );
@@ -270,14 +316,22 @@ $record['vector']                 = array(
 	'transport_error'     => $transport_error,
 );
 $record['settle_poll']            = array(
-	'waited_seconds' => $poll['waited_seconds'],
-	'settled'        => $poll['settled'],
-	'timed_out'      => $poll['timed_out'],
+	'waited_seconds'    => $poll['waited_seconds'],
+	'settled'           => $poll['settled'],
+	'timed_out'         => $poll['timed_out'],
+	'progress_observed' => $poll['progress_observed'],
 );
 $record['canary_log_writability'] = array(
 	'path'              => $canary_log_path,
 	'verified_writable' => $log_writable,
 );
+// Positive evidence that Action Scheduler's own dispatch decision point
+// was reached (or not) on this run, and what it resolved to -- see this
+// file's own docblock and docker/mu-plugins/wpcas-dispatch-decision-probe.php.
+$record['dispatch_decision']      = $dispatch_decision;
+// Positive evidence of what was actually armed for this run -- see this
+// file's own docblock and wpcas_probe_guard_state() in lib/probe.php.
+$record['guard_state']            = $guard_state;
 
 fwrite(
 	STDERR,

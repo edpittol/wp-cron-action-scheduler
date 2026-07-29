@@ -3,9 +3,9 @@
     "control": "admin-page-load:section-2-armed",
     "command": null,
     "http_status": 200,
-    "started_at": "2026-07-29T00:46:43+00:00",
-    "finished_at": "2026-07-29T00:46:45+00:00",
-    "elapsed_seconds": 2.116757869720459,
+    "started_at": "2026-07-29T01:10:22+00:00",
+    "finished_at": "2026-07-29T01:10:53+00:00",
+    "elapsed_seconds": 30.9777569770813,
     "preflight": {
         "ok": true,
         "pending_count": 50,
@@ -40,12 +40,26 @@
         "transport_error": null
     },
     "settle_poll": {
-        "waited_seconds": 2.0674638748168945,
-        "settled": true,
-        "timed_out": false
+        "waited_seconds": 30.93147110939026,
+        "settled": false,
+        "timed_out": true,
+        "progress_observed": false
     },
     "canary_log_writability": {
         "path": "/var/log/wpcas/php-error.log",
         "verified_writable": true
+    },
+    "dispatch_decision": {
+        "reached": true,
+        "allowed": false
+    },
+    "guard_state": {
+        "armed_guard_files": {
+            "10-block-http-cron.php": false,
+            "20-suppress-async-dispatch.php": true,
+            "30-log-non-cli-canary.php": false,
+            "40-unhook-queue-runner.php": false
+        },
+        "canary_action_hook_registered": false
     }
 }
