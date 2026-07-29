@@ -3,14 +3,16 @@
 declare( strict_types=1 );
 
 /**
- * Pure parsing logic for the section-3 canary guard's log output (issue
- * #6). Deliberately free of any WordPress/$wpdb/WP-CLI/filesystem
+ * Pure parsing logic for the section-3 canary guard's log output (issues
+ * #6/#7). Deliberately free of any WordPress/$wpdb/WP-CLI/filesystem
  * dependency, so it can be exercised with plain `php`, no container or WP
  * bootstrap required -- see tests/canary.test.php. All the effectful
  * parts (locating PHP's configured error_log destination, reading it
  * before/after a request, verifying it is actually writable rather than
- * assumed) live in docker/wp-cli/measure-async-ajax.php instead, which
- * calls into this file.
+ * assumed) live in docker/wp-cli/measure-async-ajax.php (#6),
+ * docker/wp-cli/measure-admin-page-load.php and
+ * docker/wp-cli/measure-manual-run.php (#7) instead, which call into this
+ * file.
  *
  * The canary guard (docker/mu-plugins-available/30-log-non-cli-canary.php)
  * writes lines shaped like:

@@ -8,8 +8,9 @@ declare( strict_types=1 );
  * No WordPress, no container, no test framework -- same split as
  * tests/result-record.test.php and tests/preflight-assertions.test.php:
  * the pure parsing logic lives apart from the effectful log-reading glue
- * in docker/wp-cli/measure-async-ajax.php so it's cheap to pin down with
- * plain `assert()` calls.
+ * in docker/wp-cli/measure-async-ajax.php (#6) and
+ * docker/wp-cli/measure-admin-page-load.php / measure-manual-run.php (#7)
+ * so it's cheap to pin down with plain `assert()` calls.
  *
  * Run: php tests/canary.test.php
  */
@@ -36,7 +37,7 @@ function wpcas_test_assert_same( string $label, $expected, $actual, array &$fail
 // --- wpcas_canary_extract_lines() ---------------------------------------
 
 // The headline case: exactly one canary line, alone.
-$one_line = '[cron-guard] queue run outside CLI: sapi=cli-server uri=/wp-admin/admin-ajax.php?action=as_async_request_queue_runner ip=127.0.0.1';
+$one_line = '[cron-guard] queue run outside CLI: sapi=cli-server uri=/wp-admin/tools.php?page=action-scheduler ip=127.0.0.1';
 wpcas_test_assert_same( 'single line: extracted', array( $one_line ), wpcas_canary_extract_lines( $one_line ), $failures );
 
 // Empty/whitespace-only content: nothing fired, not an error.
@@ -57,10 +58,10 @@ $mixed = implode(
 );
 wpcas_test_assert_same( 'mixed content: extracts only the canary line', array( $one_line ), wpcas_canary_extract_lines( $mixed ), $failures );
 
-// Two canary lines (e.g. a chained async dispatch this ticket's guard 2
-// is expected to prevent, but the parser itself must not assume that) --
+// Two canary lines (e.g. a chained async dispatch some guarded vector is
+// expected to prevent, but the parser itself must not assume that) --
 // both come back, in order.
-$second_line = '[cron-guard] queue run outside CLI: sapi=cli-server uri=/wp-admin/admin-ajax.php?action=as_async_request_queue_runner ip=10.0.0.5';
+$second_line = '[cron-guard] queue run outside CLI: sapi=cli-server uri=/wp-admin/index.php ip=10.0.0.5';
 $two_lines   = $one_line . "\n" . $second_line;
 wpcas_test_assert_same( 'two canary lines: both extracted, in order', array( $one_line, $second_line ), wpcas_canary_extract_lines( $two_lines ), $failures );
 
@@ -68,6 +69,12 @@ wpcas_test_assert_same( 'two canary lines: both extracted, in order', array( $on
 // (e.g. a different guard's own diagnostic output) must not be picked up.
 $unrelated_cron_guard_text = '[cron-guard] some other guard entirely, not this marker';
 wpcas_test_assert_same( 'unrelated cron-guard text: not extracted', array(), wpcas_canary_extract_lines( $unrelated_cron_guard_text ), $failures );
+
+// Issue #7's own headline negative case: the manual-run vector calls
+// process_action() directly and never fires 'action_scheduler_before_process_queue'
+// at all, so an empty log excerpt for that run is the expected, correct
+// reading, not a parsing failure.
+wpcas_test_assert_same( 'manual-run vector (no queue run): no lines', array(), wpcas_canary_extract_lines( '' ), $failures );
 
 // --- wpcas_canary_join_lines() -------------------------------------------
 

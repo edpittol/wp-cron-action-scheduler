@@ -34,6 +34,13 @@ RUN echo "memory_limit = 512M" > /usr/local/etc/php/conf.d/memory-limit.ini
 # docker/wp-cli/measure-async-ajax.php can *verify* is actually being
 # written to before trusting its silence or its content, rather than
 # assuming a destination that might quietly be going nowhere readable.
+#
+# Issue #7's admin-page-load vector uses the same destination the same
+# way; its manual-run vector reuses it to confirm the canary genuinely
+# does NOT fire on that path -- a documented blind spot, not an
+# assumption. Both of #7's measure-*.php scripts verify this file is
+# actually writable before trusting its silence or its content, same
+# discipline as measure-async-ajax.php above.
 RUN mkdir -p /var/log/wpcas \
     && touch /var/log/wpcas/php-error.log \
     && printf 'log_errors = On\nerror_log = /var/log/wpcas/php-error.log\n' > /usr/local/etc/php/conf.d/error-log.ini

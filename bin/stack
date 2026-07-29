@@ -23,6 +23,13 @@
 #                                        # POST an unauthenticated request to
 #                                        # Action Scheduler's async-request ajax
 #                                        # action (issue #6), write a result record
+#   bin/stack measure-admin-page-load <scenario-label>
+#                                        # authenticated wp-admin page load
+#                                        # (issue #7), write a result record
+#   bin/stack measure-manual-run <scenario-label>
+#                                        # authenticated manual "Run" click from
+#                                        # the Scheduled Actions admin screen
+#                                        # (issue #7), write a result record
 #   bin/stack set-disable-wp-cron <true|false>
 #                                        # flip the DISABLE_WP_CRON constant at
 #                                        # runtime (issue #5) -- recreates the
@@ -162,6 +169,48 @@ case "$cmd" in
             exit "$rc"
         fi
         ;;
+    measure-admin-page-load)
+        # Same file/temp-file/mv discipline as `measure` above, for issue
+        # #7's authenticated-admin-page-load script instead of a CLI
+        # control -- see that file's own docblock.
+        scenario="${1:?Usage: $(basename "$0") measure-admin-page-load <scenario-label>}"
+        mkdir -p "$REPO_ROOT/results"
+        outfile="$REPO_ROOT/results/$(date -u +%Y%m%dT%H%M%SZ)-admin-page-load-${scenario}.json"
+        tmpfile="$(mktemp "${outfile}.XXXXXX.tmp")"
+        rc=0
+        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/measure-admin-page-load.php "$scenario" --allow-root > "$tmpfile" || rc=$?
+        if [ "$rc" -eq 0 ]; then
+            mv "$tmpfile" "$outfile"
+            echo "" >&2
+            echo "Result record written to ${outfile}" >&2
+        else
+            rm -f "$tmpfile"
+            echo "" >&2
+            echo "measure-admin-page-load.php exited ${rc} -- no result record written (see the diagnostics above, e.g. a failed preflight or canary-writability self-test)." >&2
+            exit "$rc"
+        fi
+        ;;
+    measure-manual-run)
+        # Same file/temp-file/mv discipline as `measure` above, for issue
+        # #7's authenticated-manual-run script instead of a CLI control --
+        # see that file's own docblock.
+        scenario="${1:?Usage: $(basename "$0") measure-manual-run <scenario-label>}"
+        mkdir -p "$REPO_ROOT/results"
+        outfile="$REPO_ROOT/results/$(date -u +%Y%m%dT%H%M%SZ)-manual-run-${scenario}.json"
+        tmpfile="$(mktemp "${outfile}.XXXXXX.tmp")"
+        rc=0
+        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/measure-manual-run.php "$scenario" --allow-root > "$tmpfile" || rc=$?
+        if [ "$rc" -eq 0 ]; then
+            mv "$tmpfile" "$outfile"
+            echo "" >&2
+            echo "Result record written to ${outfile}" >&2
+        else
+            rm -f "$tmpfile"
+            echo "" >&2
+            echo "measure-manual-run.php exited ${rc} -- no result record written (see the diagnostics above, e.g. a failed preflight or canary-writability self-test)." >&2
+            exit "$rc"
+        fi
+        ;;
     set-disable-wp-cron)
         # Issue #5: flips the DISABLE_WP_CRON constant without rebuilding
         # the image. wp-config.php (docker/Dockerfile) reads this env var
@@ -181,7 +230,7 @@ case "$cmd" in
         echo "DISABLE_WP_CRON is now ${value} (container recreated, image not rebuilt)." >&2
         ;;
     *)
-        echo "Usage: $(basename "$0") {up|down|shell|exec|seed|reset|preflight|measure|measure-http|measure-async-ajax|set-disable-wp-cron} [args...]" >&2
+        echo "Usage: $(basename "$0") {up|down|shell|exec|seed|reset|preflight|measure|measure-http|measure-async-ajax|measure-admin-page-load|measure-manual-run|set-disable-wp-cron} [args...]" >&2
         echo "  up                    build and start the stack" >&2
         echo "  down                  stop and remove the stack" >&2
         echo "  shell                 open a shell in the wordpress container" >&2
@@ -196,6 +245,11 @@ case "$cmd" in
         echo "  measure-async-ajax <scenario-label>" >&2
         echo "                        POST an unauthenticated request to the async-request" >&2
         echo "                        ajax action, write a result record" >&2
+        echo "  measure-admin-page-load <scenario-label>" >&2
+        echo "                        authenticated wp-admin page load, write a result record" >&2
+        echo "  measure-manual-run <scenario-label>" >&2
+        echo "                        authenticated manual 'Run' click from the Scheduled" >&2
+        echo "                        Actions admin screen, write a result record" >&2
         echo "  set-disable-wp-cron <true|false>" >&2
         echo "                        flip DISABLE_WP_CRON at runtime, no rebuild" >&2
         exit 1
