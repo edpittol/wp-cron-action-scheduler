@@ -95,6 +95,12 @@ RUN wp core download --allow-root --locale=en_US
 # only triggers while DISABLE_WP_CRON is true, so a site that legitimately
 # depends on the loopback (this constant false) must not lose cron
 # silently just because a shared mu-plugins directory armed that guard.
+# Treats an empty-string env value the same as an absent one (defaults to
+# true) rather than handing '' to filter_var() (which reads it as an
+# invalid/false boolean) -- harmless in practice given
+# `set-disable-wp-cron` only ever writes the literal strings 'true'/'false'
+# and docker-compose.yml's own `${WPCAS_DISABLE_WP_CRON:-true}` default,
+# but an explicit check reads clearer than relying on that.
 # WP-CLI churn guard (issue #5, found while measuring the fleet-caveat
 # scenario, not present in issue #2's original DISABLE_WP_CRON=true
 # default because it masked this entirely): WordPress's own per-bootstrap
@@ -126,7 +132,7 @@ RUN wp config create --allow-root \
         --dbpass=wordpress \
         --dbhost=localhost \
         --skip-check \
-        --extra-php="define( 'WP_HOME', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SITEURL', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SQLITE_AST_DRIVER', true ); define( 'DISABLE_WP_CRON', false !== getenv( 'WPCAS_DISABLE_WP_CRON' ) ? filter_var( getenv( 'WPCAS_DISABLE_WP_CRON' ), FILTER_VALIDATE_BOOLEAN ) : true ); if ( defined( 'WP_CLI' ) && WP_CLI ) { define( 'DOING_CRON', true ); }"
+        --extra-php="define( 'WP_HOME', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SITEURL', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SQLITE_AST_DRIVER', true ); define( 'DISABLE_WP_CRON', ( false === getenv( 'WPCAS_DISABLE_WP_CRON' ) || '' === getenv( 'WPCAS_DISABLE_WP_CRON' ) ) ? true : filter_var( getenv( 'WPCAS_DISABLE_WP_CRON' ), FILTER_VALIDATE_BOOLEAN ) ); if ( defined( 'WP_CLI' ) && WP_CLI ) { define( 'DOING_CRON', true ); }"
 
 # SQLite Database Integration: install the plugin, then place its db.php
 # drop-in directly. The drop-in's own fallback resolves the plugin folder

@@ -36,6 +36,23 @@ declare( strict_types=1 );
  * and an HTTP status for one vector (e.g. an HTTP endpoint that itself
  * shells out) is free to populate both; nothing here enforces exclusivity,
  * it's just what this ticket's two rows happen to look like.
+ *
+ * schema_version 2 -> 3 (issue #5): added `cron_in_progress_after`, the
+ * boolean "doing_cron" transient state read immediately after the control
+ * ran -- independent of, and gathered the same way as, the `cron_in_progress`
+ * fact already present in every record's `preflight` snapshot (which is
+ * the state *before* the control ran). Issue #5's armed HTTP-vector
+ * scenario has an acceptance criterion of its own beyond the pending-count
+ * delta and the probe's own execution log: "no cron-in-progress transient
+ * left behind." Before this field existed, that criterion was only
+ * provable by taking an uncommitted follow-up `bin/stack preflight` run on
+ * trust -- exactly the kind of unverifiable claim this evidence pipeline
+ * exists to rule out. Always present (never omitted), same as `http_status`
+ * -- every caller of wpcas_result_record_build() (both CLI controls in
+ * docker/wp-cli/measure.php and the HTTP vector in
+ * docker/wp-cli/measure-http.php) gathers and passes it, so every record
+ * from this schema version carries it, whether or not that particular
+ * scenario cares about it.
  */
 
 /**
@@ -128,6 +145,7 @@ function wpcas_result_summarize_execution_contexts( array $messages ): array {
  *     pending_after: int,
  *     log_messages: string[],
  *     probe_records: array<int, array{sapi: string, pid: int, timestamp: float}>,
+ *     cron_in_progress_after: bool,
  * } $facts
  *
  * @return array<string, mixed>
@@ -150,20 +168,27 @@ function wpcas_result_record_build( array $facts ): array {
 	return array(
 		// Bumped 1 -> 2 (issue #4 follow-up): `command` changed from
 		// always-present to nullable, to accommodate the HTTP-vector row
-		// shape #5/#6/#7 will produce (see the module docblock).
-		'schema_version'      => 2,
-		'control'             => $facts['control'],
-		'command'             => $command,
+		// shape #5/#6/#7 will produce.
+		// Bumped 2 -> 3 (issue #5): added `cron_in_progress_after` (see the
+		// module docblock for both bumps).
+		'schema_version'          => 3,
+		'control'                 => $facts['control'],
+		'command'                 => $command,
 		// Always present (never omitted), independent of `command` -- see
 		// the module docblock for why both fields exist and when each is
 		// populated.
-		'http_status'         => $facts['http_status'],
-		'started_at'          => $facts['started_at'],
-		'finished_at'         => $facts['finished_at'],
-		'elapsed_seconds'     => $facts['elapsed_seconds'],
-		'preflight'           => $facts['preflight'],
-		'outcome'             => $outcome,
-		'execution_contexts'  => wpcas_result_summarize_execution_contexts( $facts['log_messages'] ),
-		'probe_records'       => $facts['probe_records'],
+		'http_status'             => $facts['http_status'],
+		'started_at'              => $facts['started_at'],
+		'finished_at'             => $facts['finished_at'],
+		'elapsed_seconds'         => $facts['elapsed_seconds'],
+		'preflight'               => $facts['preflight'],
+		// The "doing_cron" transient's state immediately after the control
+		// ran -- see the module docblock's schema_version 2 -> 3 note.
+		// `preflight.cron_in_progress` above is the same fact read
+		// *before* the control ran; this is its counterpart.
+		'cron_in_progress_after'  => $facts['cron_in_progress_after'],
+		'outcome'                 => $outcome,
+		'execution_contexts'      => wpcas_result_summarize_execution_contexts( $facts['log_messages'] ),
+		'probe_records'           => $facts['probe_records'],
 	);
 }

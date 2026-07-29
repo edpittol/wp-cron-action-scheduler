@@ -142,27 +142,29 @@ if ( '' !== trim( (string) $process->stderr ) ) {
 
 // --- Capture post-run state ------------------------------------------------
 
-$pending_after = wpcas_probe_pending_count();
-$log_messages  = wpcas_probe_log_messages_for_actions( $action_ids );
-$probe_records = wpcas_probe_execution_log_entries();
+$pending_after          = wpcas_probe_pending_count();
+$log_messages           = wpcas_probe_log_messages_for_actions( $action_ids );
+$probe_records          = wpcas_probe_execution_log_entries();
+$cron_in_progress_after = wpcas_probe_cron_in_progress();
 
 $record = wpcas_result_record_build(
 	array(
-		'control'           => $control,
-		'command_argv'      => 'wp ' . $command_argv,
-		'command_exit_code' => (int) $process->return_code,
+		'control'                => $control,
+		'command_argv'           => 'wp ' . $command_argv,
+		'command_exit_code'      => (int) $process->return_code,
 		// Neither control makes an HTTP request -- both run entirely
 		// in-process via WP-CLI (see the module docblock on
 		// result-record.php).
-		'http_status'       => null,
-		'started_at'        => $started_at,
-		'finished_at'       => $finished_at,
-		'elapsed_seconds'   => $elapsed_seconds,
-		'preflight'         => $preflight['snapshot'],
-		'pending_before'    => $pending_before,
-		'pending_after'     => $pending_after,
-		'log_messages'      => $log_messages,
-		'probe_records'     => $probe_records,
+		'http_status'            => null,
+		'started_at'             => $started_at,
+		'finished_at'            => $finished_at,
+		'elapsed_seconds'        => $elapsed_seconds,
+		'preflight'              => $preflight['snapshot'],
+		'pending_before'         => $pending_before,
+		'pending_after'          => $pending_after,
+		'log_messages'           => $log_messages,
+		'probe_records'          => $probe_records,
+		'cron_in_progress_after' => $cron_in_progress_after,
 	)
 );
 

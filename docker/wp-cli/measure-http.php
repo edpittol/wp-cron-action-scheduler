@@ -9,12 +9,16 @@ declare( strict_types=1 );
  * simulation of one. Same evidence pipeline as docker/wp-cli/measure.php
  * (issue #4): preflight first, refuse to measure on failure, then build
  * and write the canonical result record (docker/wp-cli/lib/result-record.php,
- * schema_version 2).
+ * schema_version 3).
  *
  * This is the HTTP-vector row shape that file's own docblock reserves for
  * #5/#6/#7: `command` is always null (no WP-CLI command runs here) and
  * `http_status` is populated with whatever this request's status line
- * said.
+ * said. The record also carries `cron_in_progress_after` -- the
+ * "doing_cron" transient's state read immediately after this request --
+ * so the armed scenario's "no cron-in-progress transient left behind"
+ * acceptance criterion is provable from the committed record itself, not
+ * from an uncommitted follow-up preflight taken on trust.
  *
  * On *this* stack (PHP's built-in server via `php -S`, no PHP-FPM, no
  * `fastcgi_finish_request()`) that status line is genuinely observable by
@@ -172,13 +176,13 @@ $log_messages      = wpcas_probe_log_messages_for_actions( $action_ids );
 $probe_records     = wpcas_probe_execution_log_entries();
 $cron_in_progress_after = wpcas_probe_cron_in_progress();
 
-// Diagnostic only -- deliberately NOT part of the canonical result record
-// (docker/wp-cli/lib/result-record.php's schema is fixed at
-// schema_version 2 for this ticket series; see its own module docblock).
-// The armed scenario's acceptance criterion ("no cron-in-progress
-// transient left behind") is verified by this line plus a
-// `bin/stack preflight` run immediately afterwards (which asserts
-// cron_in_progress === false itself) -- not by adding a field here.
+// Also surfaced in the canonical result record itself (`cron_in_progress_after`,
+// see lib/result-record.php's schema_version 2 -> 3 note) -- logged here
+// too purely for a human watching STDERR live, not as the only place this
+// fact is captured. The armed scenario's acceptance criterion ("no
+// cron-in-progress transient left behind") must be provable from the
+// committed JSON alone, not from an uncommitted follow-up preflight taken
+// on trust.
 fwrite(
 	STDERR,
 	sprintf( "cron-in-progress (\"doing_cron\") transient after this request: %s\n", $cron_in_progress_after ? 'true' : 'false' )
@@ -186,20 +190,21 @@ fwrite(
 
 $record = wpcas_result_record_build(
 	array(
-		'control'           => $control,
+		'control'                => $control,
 		// Neither field applies to an HTTP-vector row -- see the module
 		// docblock on lib/result-record.php.
-		'command_argv'      => null,
-		'command_exit_code' => null,
-		'http_status'       => $http_status,
-		'started_at'        => $started_at,
-		'finished_at'       => $finished_at,
-		'elapsed_seconds'   => $elapsed_seconds,
-		'preflight'         => $preflight['snapshot'],
-		'pending_before'    => $pending_before,
-		'pending_after'     => $pending_after,
-		'log_messages'      => $log_messages,
-		'probe_records'     => $probe_records,
+		'command_argv'           => null,
+		'command_exit_code'      => null,
+		'http_status'            => $http_status,
+		'started_at'             => $started_at,
+		'finished_at'            => $finished_at,
+		'elapsed_seconds'        => $elapsed_seconds,
+		'preflight'              => $preflight['snapshot'],
+		'pending_before'         => $pending_before,
+		'pending_after'          => $pending_after,
+		'log_messages'           => $log_messages,
+		'probe_records'          => $probe_records,
+		'cron_in_progress_after' => $cron_in_progress_after,
 	)
 );
 
