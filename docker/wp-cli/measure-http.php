@@ -82,11 +82,35 @@ if ( false === $port || '' === $port ) {
 	WP_CLI::error( 'STACK_PORT is not set in this container\'s environment -- cannot build the request URL.' );
 }
 
-// doing_wp_cron query arg is what core's own spawn_cron() appends; not
-// required for wp-cron.php to run, but included so this request looks
-// exactly like the one WordPress would send itself, not a hand-shaped
-// approximation of it.
-$url = sprintf( 'http://127.0.0.1:%s/wp-cron.php?doing_wp_cron=%s', $port, urlencode( (string) microtime( true ) ) );
+// Deliberately a bare GET, no query string. wp-cron.php (wp-includes,
+// core) branches on whether $_GET['doing_wp_cron'] is present:
+//
+//   if ( empty( $_GET['doing_wp_cron'] ) ) {
+//       // Called from external script/job. Try setting a lock.
+//       ...
+//       $doing_wp_cron = sprintf( '%.22F', microtime( true ) );
+//       set_transient( 'doing_cron', $doing_wp_cron );
+//   } else {
+//       $doing_wp_cron = $_GET['doing_wp_cron'];
+//   }
+//   if ( $doing_cron_transient !== $doing_wp_cron ) {
+//       return;
+//   }
+//
+// Found the hard way while building this measurement: an earlier version
+// of this script appended its own `?doing_wp_cron=<microtime>` (meant to
+// "look like" the query string core's own spawn_cron() adds when *it*
+// calls this file, e.g. via the loopback). That took the `else` branch
+// instead of the lock-acquiring `if` branch -- the request never sets its
+// own transient, so the immediately-following `$doing_cron_transient !==
+// $doing_wp_cron` check fails against whatever (if anything) is already
+// stored, and wp-cron.php returns instantly having run nothing. That
+// produced a convincing but wrong "0 drained" result even fully unarmed
+// -- exactly the class of false result this ticket's evidence pipeline
+// exists to catch. A bare GET with no query string is what an actual
+// unauthenticated client (a browser, `curl`, a scanner) sends, and takes
+// the `if` branch that both sets and matches its own lock.
+$url = sprintf( 'http://127.0.0.1:%s/wp-cron.php', $port );
 
 fwrite(
 	STDERR,

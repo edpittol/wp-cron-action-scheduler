@@ -1,0 +1,32 @@
+{
+    "schema_version": 2,
+    "control": "http-cron-armed",
+    "command": null,
+    "http_status": 403,
+    "started_at": "2026-07-29T00:33:56+00:00",
+    "finished_at": "2026-07-29T00:33:56+00:00",
+    "elapsed_seconds": 0.012271881103515625,
+    "preflight": {
+        "ok": true,
+        "pending_count": 50,
+        "callback_attached": true,
+        "cron_in_progress": false,
+        "claims_count": 0,
+        "failures": []
+    },
+    "outcome": {
+        "pending_before": 50,
+        "pending_after": 50,
+        "drained": 0,
+        "fully_drained": false,
+        "probe_executions_observed": 0
+    },
+    "execution_contexts": {
+        "started": [],
+        "completed": [],
+        "other": {
+            "action created": 50
+        }
+    },
+    "probe_records": []
+}

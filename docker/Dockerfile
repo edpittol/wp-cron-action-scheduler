@@ -95,13 +95,38 @@ RUN wp core download --allow-root --locale=en_US
 # only triggers while DISABLE_WP_CRON is true, so a site that legitimately
 # depends on the loopback (this constant false) must not lose cron
 # silently just because a shared mu-plugins directory armed that guard.
+# WP-CLI churn guard (issue #5, found while measuring the fleet-caveat
+# scenario, not present in issue #2's original DISABLE_WP_CRON=true
+# default because it masked this entirely): WordPress's own per-bootstrap
+# wp_cron() -> spawn_cron() check runs on every request AND every WP-CLI
+# invocation alike (same mechanism the DISABLE_WP_CRON docblock above
+# already flags), and it is gated on DISABLE_WP_CRON, not on SAPI. With
+# that constant false (required for this scenario), every `wp eval-file`
+# this repo's own tooling runs (seed/reset/preflight/measure*) re-triggers
+# a spawn attempt on its own bootstrap -- which, on this stack's PHP
+# built-in server (no persistent worker pool), does not reliably
+# complete, leaving a stuck "doing_cron" lock that fails the *next*
+# command's preflight, or -- worse -- eventually *does* complete in the
+# background and silently drains the seeded queue outside of any
+# controlled measurement. Neither is what issue #5 is measuring: the
+# vector under test is one explicit, external, unauthenticated GET, not
+# this stack's own tooling accidentally triggering WP-Cron via its
+# incidental bootstrap. `DOING_CRON` is spawn_cron()'s own unconditional
+# early exit (`if ( defined('DOING_CRON') ... ) return false;`,
+# independent of DISABLE_WP_CRON) -- defining it true for every WP-CLI
+# process (WP_CLI is WP-CLI's own always-on constant, defined before
+# wp-config.php loads) suppresses exactly that self-spawn, for every
+# command, regardless of DISABLE_WP_CRON's value. It does not affect this
+# guard's own condition (guard 1 also requires PHP_SAPI !== 'cli', which
+# every WP-CLI process already satisfies) or any of this repo's existing,
+# already-verified CLI controls, which never depended on this constant.
 RUN wp config create --allow-root \
         --dbname=wordpress \
         --dbuser=wordpress \
         --dbpass=wordpress \
         --dbhost=localhost \
         --skip-check \
-        --extra-php="define( 'WP_HOME', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SITEURL', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SQLITE_AST_DRIVER', true ); define( 'DISABLE_WP_CRON', false !== getenv( 'WPCAS_DISABLE_WP_CRON' ) ? filter_var( getenv( 'WPCAS_DISABLE_WP_CRON' ), FILTER_VALIDATE_BOOLEAN ) : true );"
+        --extra-php="define( 'WP_HOME', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SITEURL', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SQLITE_AST_DRIVER', true ); define( 'DISABLE_WP_CRON', false !== getenv( 'WPCAS_DISABLE_WP_CRON' ) ? filter_var( getenv( 'WPCAS_DISABLE_WP_CRON' ), FILTER_VALIDATE_BOOLEAN ) : true ); if ( defined( 'WP_CLI' ) && WP_CLI ) { define( 'DOING_CRON', true ); }"
 
 # SQLite Database Integration: install the plugin, then place its db.php
 # drop-in directly. The drop-in's own fallback resolves the plugin folder
