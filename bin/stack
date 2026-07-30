@@ -9,10 +9,13 @@
 # container/network/volume names or on the published port.
 #
 # Usage:
-#   bin/stack up             # build (if needed) and start, print the URL
-#   bin/stack down [args...] # stop and remove containers
-#   bin/stack shell          # interactive shell in the wordpress container
-#   bin/stack exec <cmd>     # run <cmd> in the wordpress container (e.g. wp-cli)
+#   bin/stack up               # build (if needed) and start, print the URL
+#   bin/stack down [args...]   # stop and remove containers
+#   bin/stack shell            # interactive shell in the wordpress container
+#   bin/stack exec <cmd>       # run <cmd> in the wordpress container (e.g. wp-cli)
+#   bin/stack seed [count]     # seed <count> (default 50) pending probe actions
+#   bin/stack reset [count]    # clear transient/claims/leftovers, then re-seed
+#   bin/stack preflight        # assert preconditions, emit a JSON snapshot
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -57,13 +60,32 @@ case "$cmd" in
         # -T: no pseudo-tty, so this also works from non-interactive scripts.
         compose exec -T wordpress "$@"
         ;;
+    seed)
+        # -T: see `exec` above -- this also runs from non-interactive scripts.
+        # --use-include: `wp eval-file` defaults to eval()'ing the file's
+        # contents as a string, and `declare( strict_types=1 )` is rejected
+        # unconditionally inside eval() ("must be the very first statement")
+        # no matter where it appears. --use-include runs the file via a
+        # normal PHP `include` instead, same as any other required file in
+        # this codebase, so strict_types works like it does everywhere else.
+        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/seed.php "$@" --allow-root
+        ;;
+    reset)
+        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/reset.php "$@" --allow-root
+        ;;
+    preflight)
+        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/preflight.php "$@" --allow-root
+        ;;
     *)
-        echo "Usage: $(basename "$0") {up|down|shell|exec} [args...]" >&2
-        echo "  up            build and start the stack" >&2
-        echo "  down          stop and remove the stack" >&2
-        echo "  shell         open a shell in the wordpress container" >&2
-        echo "  exec <cmd>    run <cmd> in the wordpress container, e.g.:" >&2
-        echo "                  bin/stack exec wp core is-installed" >&2
+        echo "Usage: $(basename "$0") {up|down|shell|exec|seed|reset|preflight} [args...]" >&2
+        echo "  up               build and start the stack" >&2
+        echo "  down             stop and remove the stack" >&2
+        echo "  shell            open a shell in the wordpress container" >&2
+        echo "  exec <cmd>       run <cmd> in the wordpress container, e.g.:" >&2
+        echo "                     bin/stack exec wp core is-installed" >&2
+        echo "  seed [count]     seed <count> (default 50) pending probe actions" >&2
+        echo "  reset [count]    clear transient/claims/leftovers, then re-seed" >&2
+        echo "  preflight        assert preconditions, emit a JSON snapshot" >&2
         exit 1
         ;;
 esac

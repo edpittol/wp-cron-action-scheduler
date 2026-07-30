@@ -61,13 +61,34 @@ RUN wp core download --allow-root --locale=en_US
 # "zero drained" result should not be read as settled without first ruling
 # out an AST-driver translation gap, the same way this ticket ruled out the
 # legacy translator's JOIN-UPDATE gap.
+#
+# DISABLE_WP_CRON: added for issue #2. Action Scheduler registers its own
+# fallback queue runner as a WP-Cron event (`action_scheduler_run_queue`,
+# every minute) on top of its independent async-request dispatcher. With
+# WP-Cron left on, core's own per-bootstrap wp_cron() check -- which runs
+# on practically every request *and* WP-CLI invocation, not just page
+# loads -- kept re-arming the "doing_cron" lock transient because that
+# queue-runner event is essentially always due. The built-in PHP server's
+# own async loopback to wp-cron.php doesn't reliably complete (no real
+# FPM/persistent worker pool backing it here), so the lock routinely
+# outlived its own trigger, sitting there for its full timeout even right
+# after `bin/stack reset` had just cleared it -- exactly the false
+# "cron-in-progress" state issue #2's preflight exists to catch, except
+# self-inflicted by WordPress's own default cron wiring rather than a
+# leftover from a previous run. This stack never relies on WP-Cron's
+# spawn/loopback path in the first place: issue #1's own verification
+# recipe drains the queue with the explicit `wp action-scheduler run`,
+# and issue #2's seed/reset/preflight tooling does the same. Turning off
+# the implicit spawn removes the self-inflicted churn without touching
+# either of those explicit, working paths, or Action Scheduler's separate
+# async-request dispatcher (unaffected by this constant).
 RUN wp config create --allow-root \
         --dbname=wordpress \
         --dbuser=wordpress \
         --dbpass=wordpress \
         --dbhost=localhost \
         --skip-check \
-        --extra-php="define( 'WP_HOME', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SITEURL', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SQLITE_AST_DRIVER', true );"
+        --extra-php="define( 'WP_HOME', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SITEURL', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SQLITE_AST_DRIVER', true ); define( 'DISABLE_WP_CRON', true );"
 
 # SQLite Database Integration: install the plugin, then place its db.php
 # drop-in directly. The drop-in's own fallback resolves the plugin folder
@@ -97,6 +118,15 @@ RUN mkdir -p wp-content/mu-plugins
 COPY mu-plugins/wpcas-poc-probe.php /var/www/html/wp-content/mu-plugins/wpcas-poc-probe.php
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Issue #2's seed/reset/preflight scripts, run via `wp eval-file`. Placed
+# outside the web root deliberately: router.php's try_files semantics hand
+# any *existing file* under /var/www/html straight to the built-in server
+# to execute in place (see its own docstring), so a .php file living under
+# wp-content would be directly, remotely requestable over HTTP. These
+# scripts assume a WP-CLI bootstrap ($args, WP_CLI::*), not an HTTP
+# request, so they live at /opt/wpcas-tools instead.
+COPY wp-cli/ /opt/wpcas-tools/
 
 # Enough php-cli-server workers that a loopback request (e.g. the async
 # Action Scheduler dispatcher, or wp-cron.php's own admin-ajax loopback)
