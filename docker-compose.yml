@@ -1,0 +1,22 @@
+services:
+  wordpress:
+    build:
+      context: ./docker
+      # No `args:` here on purpose: the Action Scheduler version has
+      # exactly one source of truth, the ACTION_SCHEDULER_VERSION ARG
+      # default in docker/Dockerfile. Overriding it here would let this
+      # file and the Dockerfile silently disagree.
+    ports:
+      - "${STACK_PORT:-8080}:${STACK_PORT:-8080}"
+    environment:
+      STACK_PORT: "${STACK_PORT:-8080}"
+    volumes:
+      # Only the actual SQLite data file persists across `up`/`down`.
+      # Everything else under wp-content (plugins, mu-plugins, the db.php
+      # drop-in) comes straight from the image, so rebuilding with a new
+      # ACTION_SCHEDULER_VERSION takes effect on the next `up` without
+      # needing a volume wipe.
+      - wp-database:/var/www/html/wp-content/database
+
+volumes:
+  wp-database:
