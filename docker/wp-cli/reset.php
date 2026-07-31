@@ -13,8 +13,9 @@ declare( strict_types=1 );
  *
  * Usage: wp eval-file docker/wp-cli/reset.php [<seed-count>] [due-now]
  *   <seed-count> defaults to WPCAS_PROBE_DEFAULT_SEED_COUNT (50).
- *   due-now re-seeds as already due -- see seed.php's docstring (issue #9)
- *   for why this is a positional token rather than a `--due-now` flag.
+ *   due-now re-seeds as already due -- see seed.php's docstring for why
+ *   this is a positional token rather than a `--due-now` flag. Required
+ *   before measuring a due-now control (issue #4).
  *
  * Invoked via `bin/stack reset [<seed-count>] [--due-now]`.
  */

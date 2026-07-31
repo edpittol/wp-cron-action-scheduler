@@ -16,6 +16,8 @@
 #   bin/stack seed [count] [--due-now]  # seed <count> (default 50) pending probe actions
 #   bin/stack reset [count] [--due-now] # clear transient/claims/leftovers, then re-seed
 #   bin/stack preflight                 # assert preconditions, emit a JSON snapshot
+#   bin/stack measure <control>         # run a CLI control, write a result record
+#                                       #   <control>: wp-cron | action-scheduler
 #   bin/stack occupancy [count]         # measure worker occupancy during a drain (issue #9)
 set -euo pipefail
 
@@ -238,13 +240,48 @@ case "$cmd" in
     preflight)
         compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/preflight.php "$@" --allow-root
         ;;
+    measure)
+        # Runs one CLI control (issue #4) and writes its result record to
+        # results/ on the host -- not just inside the container -- so it
+        # survives `bin/stack down` and can be committed as evidence.
+        #
+        # measure.php sends everything *except* the final JSON record to
+        # STDOUT/STDERR split on purpose (see its own docblock): the record
+        # goes to STDOUT and nothing else does, progress/diagnostics go to
+        # STDERR. That alone isn't enough to guarantee $outfile only ever
+        # holds a real record, though -- redirecting straight to $outfile
+        # would create/truncate it before measure.php even runs, so a
+        # preflight abort (non-zero exit, nothing on STDOUT) would still
+        # leave a 0-byte file behind that looks like a record at a glance.
+        # Write to a temp file in the same directory instead (so the final
+        # `mv` is a same-filesystem rename, not a copy) and only place it
+        # at $outfile once the command has actually exited 0; on failure,
+        # delete the temp file and propagate the exit code instead of
+        # leaving anything behind.
+        control="${1:?Usage: $(basename "$0") measure <wp-cron|action-scheduler>}"
+        mkdir -p "$REPO_ROOT/results"
+        outfile="$REPO_ROOT/results/$(date -u +%Y%m%dT%H%M%SZ)-${control}.json"
+        tmpfile="$(mktemp "${outfile}.XXXXXX.tmp")"
+        rc=0
+        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/measure.php "$control" --allow-root > "$tmpfile" || rc=$?
+        if [ "$rc" -eq 0 ]; then
+            mv "$tmpfile" "$outfile"
+            echo "" >&2
+            echo "Result record written to ${outfile}" >&2
+        else
+            rm -f "$tmpfile"
+            echo "" >&2
+            echo "measure.php exited ${rc} -- no result record written (see the diagnostics above, e.g. a failed preflight)." >&2
+            exit "$rc"
+        fi
+        ;;
     occupancy)
         # issue #9: measure worker occupancy during a drain. See the
         # run_occupancy() function above for the full scenario.
         run_occupancy "$@"
         ;;
     *)
-        echo "Usage: $(basename "$0") {up|down|shell|exec|seed|reset|preflight|occupancy} [args...]" >&2
+        echo "Usage: $(basename "$0") {up|down|shell|exec|seed|reset|preflight|measure|occupancy} [args...]" >&2
         echo "  up                    build and start the stack" >&2
         echo "  down                  stop and remove the stack" >&2
         echo "  shell                 open a shell in the wordpress container" >&2
@@ -253,6 +290,8 @@ case "$cmd" in
         echo "  seed [count] [--due-now]   seed <count> (default 50) pending probe actions" >&2
         echo "  reset [count] [--due-now]  clear transient/claims/leftovers, then re-seed" >&2
         echo "  preflight             assert preconditions, emit a JSON snapshot" >&2
+        echo "  measure <control>     run a CLI control, write a result record;" >&2
+        echo "                          <control>: wp-cron | action-scheduler" >&2
         echo "  occupancy [count]     measure worker occupancy during a drain (issue #9)" >&2
         exit 1
         ;;

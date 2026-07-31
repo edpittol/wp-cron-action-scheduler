@@ -8,7 +8,10 @@ declare( strict_types=1 );
  * Usage: wp eval-file docker/wp-cli/seed.php [<count>] [due-now]
  *   <count> defaults to WPCAS_PROBE_DEFAULT_SEED_COUNT (50).
  *   due-now schedules actions as already due instead of #2's default
- *   ~5-minute lead time -- see wpcas_probe_seed()'s docstring (issue #9).
+ *   ~5-minute lead time -- see wpcas_probe_seed()'s docstring. Needed both
+ *   by issue #9's occupancy drain and by issue #4's due-now CLI controls
+ *   (`wp cron event run --due-now`, `wp action-scheduler run`), which have
+ *   nothing to drain against a not-yet-due queue.
  *
  * `due-now` is a positional token, not a `--due-now` flag: `wp eval-file`
  * validates assoc-args strictly against its own command signature and
@@ -25,5 +28,6 @@ $due_now = in_array( 'due-now', $args, true );
 
 $count_args = array_values( array_filter( $args, static fn( string $arg ): bool => 'due-now' !== $arg ) );
 $count      = isset( $count_args[0] ) ? (int) $count_args[0] : WPCAS_PROBE_DEFAULT_SEED_COUNT;
+
 
 wpcas_probe_seed( $count, $due_now );
