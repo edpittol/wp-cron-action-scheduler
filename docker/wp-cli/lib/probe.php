@@ -39,14 +39,20 @@ const WPCAS_PROBE_SEED_LEAD_SECONDS = 300;
  * command -- not a hand-rolled seeder, per the ticket -- so seeding
  * exercises the exact code path a real Action Scheduler caller would.
  *
- * $due_now (issue #4): the default (false) keeps issue #2's
- * not-yet-due scheduling, which is what makes "confirm 50 pending" a
- * stable precondition. A due-now control (`wp cron event run --due-now`,
- * `wp action-scheduler run`) has nothing to drain against that queue --
- * future-scheduled actions are not due, so a due-now runner processes 0 of
- * them. Draining 50 to 0 needs actions that are actually due, hence this
- * flag: it schedules at `time()` instead of `time() + lead`, deliberately
- * accepting the self-drain risk documented on
+ * $due_now: the default (false) keeps issue #2's not-yet-due scheduling,
+ * which is what makes "confirm 50 pending" a stable precondition against
+ * Action Scheduler's async dispatcher (see that constant's own docstring).
+ * Two callers need the opposite, and share this one seam:
+ *
+ * - issue #4's due-now CLI controls (`wp cron event run --due-now`,
+ *   `wp action-scheduler run`) have nothing to drain against a not-yet-due
+ *   queue -- future-scheduled actions are not due, so a due-now runner
+ *   processes 0 of them, and draining 50 to 0 needs actions actually due;
+ * - issue #9's worker-occupancy measurement needs a real drain in flight,
+ *   which likewise needs due actions.
+ *
+ * So the flag schedules at `time()` instead of `time() + lead`,
+ * deliberately accepting the self-drain risk documented on
  * WPCAS_PROBE_SEED_LEAD_SECONDS above -- callers measuring a due-now
  * control need exactly that risk to verify their own dispatch-control
  * story (see docker/wp-cli/measure.php), so it can't be designed away
@@ -168,6 +174,32 @@ function wpcas_probe_clear_cron_transient(): bool {
 	$was_set = wpcas_probe_cron_in_progress();
 
 	delete_transient( 'doing_cron' );
+
+	return $was_set;
+}
+
+/**
+ * Clears Action Scheduler's own `async-request-runner` lock (see
+ * ActionScheduler_QueueRunner::maybe_dispatch_async_request()), returning
+ * whether it was set beforehand.
+ *
+ * Issue #9 seam: this lock throttles the async dispatch this ticket's
+ * occupancy trigger depends on to "at most once every 60 seconds" (see
+ * ActionScheduler_Lock::$lock_duration). A lock left over from a previous
+ * occupancy run (or any other admin-context request that happened to
+ * dispatch one) would make a later trigger request return fast without
+ * actually starting a drain -- indistinguishable, from the trigger
+ * response alone, from the real "returns almost instantly" behaviour this
+ * ticket is trying to measure. Clearing it immediately before triggering
+ * rules that specific false result out, the same way reset.php already
+ * rules out a stale "doing_cron" transient before preflight.
+ */
+function wpcas_probe_clear_async_dispatch_lock(): bool {
+	$lock_option = 'action_scheduler_lock_async-request-runner';
+
+	$was_set = false !== get_option( $lock_option, false );
+
+	delete_option( $lock_option );
 
 	return $was_set;
 }

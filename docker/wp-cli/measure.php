@@ -26,7 +26,7 @@ declare( strict_types=1 );
  * preflights before doing anything else and refuses to measure (same
  * abort contract as preflight.php: non-zero exit, no record written) if
  * preflight fails. Callers are still expected to have run
- * `bin/stack reset <count> due-now` first -- preflight does not check
+ * `bin/stack reset <count> --due-now` first -- preflight does not check
  * *when* actions are due, only that some are pending, a callback is
  * attached, and the site is otherwise in a clean state (see
  * docker/wp-cli/lib/preflight-assertions.php) -- a due-now control run
