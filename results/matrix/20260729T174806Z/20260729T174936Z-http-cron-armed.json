@@ -1,0 +1,43 @@
+{
+  "schema_version": 3,
+  "control": "http-cron-armed",
+  "command": null,
+  "http_status": 403,
+  "started_at": "2026-07-29T17:49:36+00:00",
+  "finished_at": "2026-07-29T17:49:36+00:00",
+  "elapsed_seconds": 0.005110025405883789,
+  "preflight": {
+    "ok": true,
+    "pending_count": 50,
+    "callback_attached": true,
+    "cron_in_progress": false,
+    "claims_count": 0,
+    "failures": []
+  },
+  "cron_in_progress_after": false,
+  "outcome": {
+    "pending_before": 50,
+    "pending_after": 50,
+    "drained": 0,
+    "fully_drained": false,
+    "probe_executions_observed": 0
+  },
+  "execution_contexts": {
+    "started": [],
+    "completed": [],
+    "other": {
+      "action created": 50
+    }
+  },
+  "probe_records": [],
+  "canary_line": null,
+  "canary_fired": false,
+  "matrix_context": {
+    "scenario_label": "http-cron-armed",
+    "armed_sections": [
+      1
+    ],
+    "disable_wp_cron": true,
+    "seed_count": 50
+  }
+}

@@ -21,6 +21,30 @@ LABEL org.opencontainers.image.description="WordPress (PHP built-in server + SQL
 # WordPress core tarball.
 RUN echo "memory_limit = 512M" > /usr/local/etc/php/conf.d/memory-limit.ini
 
+# Issue #6's canary guard (docker/mu-plugins-available/30-log-non-cli-canary.php)
+# writes to PHP's error log. Left at its default, PHP's `error_log` ini
+# directive is empty, which for the built-in `php -S` server means every
+# error_log() call goes to the server process's own STDERR -- captured (if
+# at all) by whatever runs the container, not by any file this repo's
+# tooling can read back to confirm the canary actually fired. Pointing
+# `error_log` at a concrete, writable path here means the canary's
+# destination is a known file both the serving process (entrypoint's
+# `php -S`) and any `wp` CLI invocation (same php.ini/conf.d) write to and
+# can be read back from -- and, critically, something
+# docker/wp-cli/measure-async-ajax.php can *verify* is actually being
+# written to before trusting its silence or its content, rather than
+# assuming a destination that might quietly be going nowhere readable.
+#
+# Issue #7's admin-page-load vector uses the same destination the same
+# way; its manual-run vector reuses it to confirm the canary genuinely
+# does NOT fire on that path -- a documented blind spot, not an
+# assumption. Both of #7's measure-*.php scripts verify this file is
+# actually writable before trusting its silence or its content, same
+# discipline as measure-async-ajax.php above.
+RUN mkdir -p /var/log/wpcas \
+    && touch /var/log/wpcas/php-error.log \
+    && printf 'log_errors = On\nerror_log = /var/log/wpcas/php-error.log\n' > /usr/local/etc/php/conf.d/error-log.ini
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         unzip \
@@ -61,13 +85,78 @@ RUN wp core download --allow-root --locale=en_US
 # "zero drained" result should not be read as settled without first ruling
 # out an AST-driver translation gap, the same way this ticket ruled out the
 # legacy translator's JOIN-UPDATE gap.
+#
+# DISABLE_WP_CRON: added for issue #2. Action Scheduler registers its own
+# fallback queue runner as a WP-Cron event (`action_scheduler_run_queue`,
+# every minute) on top of its independent async-request dispatcher. With
+# WP-Cron left on, core's own per-bootstrap wp_cron() check -- which runs
+# on practically every request *and* WP-CLI invocation, not just page
+# loads -- kept re-arming the "doing_cron" lock transient because that
+# queue-runner event is essentially always due. The built-in PHP server's
+# own async loopback to wp-cron.php doesn't reliably complete (no real
+# FPM/persistent worker pool backing it here), so the lock routinely
+# outlived its own trigger, sitting there for its full timeout even right
+# after `bin/stack reset` had just cleared it -- exactly the false
+# "cron-in-progress" state issue #2's preflight exists to catch, except
+# self-inflicted by WordPress's own default cron wiring rather than a
+# leftover from a previous run. This stack never relies on WP-Cron's
+# spawn/loopback path in the first place: issue #1's own verification
+# recipe drains the queue with the explicit `wp action-scheduler run`,
+# and issue #2's seed/reset/preflight tooling does the same. Turning off
+# the implicit spawn removes the self-inflicted churn without touching
+# either of those explicit, working paths, or Action Scheduler's separate
+# async-request dispatcher (unaffected by this constant).
+#
+# Runtime-switchable (issue #5): the value below is no longer the literal
+# `true` issue #2 baked in -- it reads the WPCAS_DISABLE_WP_CRON env var
+# via getenv() on every request, defaulting to true when that var is
+# absent (e.g. this image run directly with plain `docker run`, no
+# compose). docker-compose.yml passes WPCAS_DISABLE_WP_CRON through from
+# the host (see bin/stack's `set-disable-wp-cron` subcommand), so flipping
+# it only requires recreating the container with a new env value -- no
+# image rebuild. This is the "fleet caveat" scenario issue #5 exists to
+# measure: guard section 1 (block HTTP requests to the cron entry point)
+# only triggers while DISABLE_WP_CRON is true, so a site that legitimately
+# depends on the loopback (this constant false) must not lose cron
+# silently just because a shared mu-plugins directory armed that guard.
+# Treats an empty-string env value the same as an absent one (defaults to
+# true) rather than handing '' to filter_var() (which reads it as an
+# invalid/false boolean) -- harmless in practice given
+# `set-disable-wp-cron` only ever writes the literal strings 'true'/'false'
+# and docker-compose.yml's own `${WPCAS_DISABLE_WP_CRON:-true}` default,
+# but an explicit check reads clearer than relying on that.
+# WP-CLI churn guard (issue #5, found while measuring the fleet-caveat
+# scenario, not present in issue #2's original DISABLE_WP_CRON=true
+# default because it masked this entirely): WordPress's own per-bootstrap
+# wp_cron() -> spawn_cron() check runs on every request AND every WP-CLI
+# invocation alike (same mechanism the DISABLE_WP_CRON docblock above
+# already flags), and it is gated on DISABLE_WP_CRON, not on SAPI. With
+# that constant false (required for this scenario), every `wp eval-file`
+# this repo's own tooling runs (seed/reset/preflight/measure*) re-triggers
+# a spawn attempt on its own bootstrap -- which, on this stack's PHP
+# built-in server (no persistent worker pool), does not reliably
+# complete, leaving a stuck "doing_cron" lock that fails the *next*
+# command's preflight, or -- worse -- eventually *does* complete in the
+# background and silently drains the seeded queue outside of any
+# controlled measurement. Neither is what issue #5 is measuring: the
+# vector under test is one explicit, external, unauthenticated GET, not
+# this stack's own tooling accidentally triggering WP-Cron via its
+# incidental bootstrap. `DOING_CRON` is spawn_cron()'s own unconditional
+# early exit (`if ( defined('DOING_CRON') ... ) return false;`,
+# independent of DISABLE_WP_CRON) -- defining it true for every WP-CLI
+# process (WP_CLI is WP-CLI's own always-on constant, defined before
+# wp-config.php loads) suppresses exactly that self-spawn, for every
+# command, regardless of DISABLE_WP_CRON's value. It does not affect this
+# guard's own condition (guard 1 also requires PHP_SAPI !== 'cli', which
+# every WP-CLI process already satisfies) or any of this repo's existing,
+# already-verified CLI controls, which never depended on this constant.
 RUN wp config create --allow-root \
         --dbname=wordpress \
         --dbuser=wordpress \
         --dbpass=wordpress \
         --dbhost=localhost \
         --skip-check \
-        --extra-php="define( 'WP_HOME', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SITEURL', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SQLITE_AST_DRIVER', true );"
+        --extra-php="define( 'WP_HOME', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SITEURL', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SQLITE_AST_DRIVER', true ); define( 'DISABLE_WP_CRON', ( false === getenv( 'WPCAS_DISABLE_WP_CRON' ) || '' === getenv( 'WPCAS_DISABLE_WP_CRON' ) ) ? true : filter_var( getenv( 'WPCAS_DISABLE_WP_CRON' ), FILTER_VALIDATE_BOOLEAN ) ); if ( defined( 'WP_CLI' ) && WP_CLI ) { define( 'DOING_CRON', true ); }"
 
 # SQLite Database Integration: install the plugin, then place its db.php
 # drop-in directly. The drop-in's own fallback resolves the plugin folder
@@ -104,6 +193,15 @@ RUN mkdir -p wp-content/mu-plugins
 COPY mu-plugins/wpcas-poc-probe.php /var/www/html/wp-content/mu-plugins/wpcas-poc-probe.php
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Issue #2's seed/reset/preflight scripts, run via `wp eval-file`. Placed
+# outside the web root deliberately: router.php's try_files semantics hand
+# any *existing file* under /var/www/html straight to the built-in server
+# to execute in place (see its own docstring), so a .php file living under
+# wp-content would be directly, remotely requestable over HTTP. These
+# scripts assume a WP-CLI bootstrap ($args, WP_CLI::*), not an HTTP
+# request, so they live at /opt/wpcas-tools instead.
+COPY wp-cli/ /opt/wpcas-tools/
 
 # Enough php-cli-server workers that a loopback request (e.g. the async
 # Action Scheduler dispatcher, or wp-cron.php's own admin-ajax loopback)
