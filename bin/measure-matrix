@@ -1,0 +1,622 @@
+#!/usr/bin/env bash
+#
+# Issue #10: drives every scenario this evidence base rests on -- both
+# CLI controls (#4), all three HTTP vectors and their armed/unarmed states
+# (#5/#6/#7), the unhook-timing table (#8), and the worker-occupancy
+# measurement (#9) -- end to end, unattended, in one run.
+#
+# For every ordinary scenario (everything except unhook-timing, which
+# manages its own arm/disarm/reset internally -- see bin/measure-unhook-timing):
+#
+#   1. arm exactly the guard sections that scenario needs (`bin/guard arm`,
+#      called with an absolute section list every time -- never assumed
+#      left over from the previous scenario);
+#   2. flip DISABLE_WP_CRON if this scenario needs a non-default value
+#      (only the "fleet caveat" scenario does);
+#   3. reset the probe queue (`bin/stack reset <count> --due-now`);
+#   4. explicitly preflight (`bin/stack preflight`) -- if this fails, the
+#      run is aborted LOUDLY (diagnostics dumped to STDERR under a visible
+#      banner) and recorded as an explicit negative result; the matrix
+#      moves on to the next scenario rather than stopping;
+#   5. only if that preflight passed, run the actual measurement command
+#      (which preflights AGAIN internally, on the same facts -- redundant
+#      by design, the same defense-in-depth every individual measure*.php
+#      script already applies to itself).
+#
+# A measurement command that itself exits non-zero (a failed canary-
+# writability self-test, an internal preflight re-check failing between
+# steps 4 and 5, or anything else) is caught the same way: LOUD diagnostics,
+# an explicit negative-result record, and the matrix continues.
+#
+# Every record this run produces -- positive or negative -- is written
+# under a single timestamped directory in results/matrix/, never mixed
+# with the individual example records #5/#6/#7 committed directly under
+# results/ (see the RESULTS_DIR override below, and issue #10's own
+# `## Decisions` for why that separation matters: bin/generate-report
+# renders results/matrix/ exclusively).
+#
+# Usage:
+#   bin/stack up          # bring the stack up first -- this script does not
+#   bin/measure-matrix [seed-count]
+#
+# Prints a human-readable summary table to STDOUT when done; every other
+# message goes to STDERR.
+set -uo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+STACK="$REPO_ROOT/bin/stack"
+GUARD="$REPO_ROOT/bin/guard"
+UNHOOK_TIMING="$REPO_ROOT/bin/measure-unhook-timing"
+
+SEED_COUNT="${1:-50}"
+
+RUN_TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+MATRIX_DIR="$REPO_ROOT/results/matrix/${RUN_TIMESTAMP}"
+mkdir -p "$MATRIX_DIR"
+
+# Every `bin/stack measure*` subcommand below writes here instead of the
+# top-level results/ directory -- see bin/stack's own RESULTS_DIR docblock.
+export WPCAS_RESULTS_DIR="$MATRIX_DIR"
+
+TOTAL_COUNT=0
+FAILED_COUNT=0
+declare -a SUMMARY_ROWS=()
+
+log() {
+    echo "$@" >&2
+}
+
+banner() {
+    log ""
+    log "================================================================"
+    log "$1"
+    log "================================================================"
+}
+
+# Builds a negative-result JSON record from whatever the failing command
+# printed, and writes it to $MATRIX_DIR/<label>.negative.json. Never
+# fabricates a positive figure in place of a real one -- a run that did not
+# reproduce is recorded as exactly that, explicitly, with the real
+# diagnostics attached, not papered over or silently dropped.
+record_negative() {
+    local label="$1" reason="$2" exit_code="$3" log_file="$4" guard_sections="${5:-}" disable_wp_cron="${6:-}"
+    local outfile="$MATRIX_DIR/${label}.negative.json"
+
+    python3 - "$label" "$reason" "$exit_code" "$log_file" "$outfile" "$guard_sections" "$disable_wp_cron" <<'PYEOF'
+import json
+import re
+import sys
+
+label, reason, exit_code, log_path, out_path, guard_sections, disable_wp_cron = sys.argv[1:8]
+
+with open(log_path, "r", errors="replace") as f:
+    log_text = f.read()
+
+# The preflight snapshot (whether printed by `bin/stack preflight` itself,
+# or by a measure*.php script's own internal re-check) is a single
+# pretty-printed JSON object on its own lines -- pulled back out here, best
+# effort, so a negative record still carries whatever preflight snapshot is
+# available rather than just a bare failure string.
+preflight_snapshot = None
+for match in re.finditer(r"\{[^{}]*\"pending_count\"[^{}]*\}", log_text, re.DOTALL):
+    try:
+        preflight_snapshot = json.loads(match.group(0))
+    except json.JSONDecodeError:
+        continue
+
+record = {
+    "result_kind": "negative",
+    "control": label,
+    "reason": reason,
+    "exit_code": int(exit_code),
+    "preflight": preflight_snapshot,
+    "log_tail": log_text[-4000:],
+    "matrix_context": {
+        "scenario_label": label,
+        "armed_sections": [int(s) for s in guard_sections.split()] if guard_sections.strip() else [],
+        "disable_wp_cron": disable_wp_cron == "true",
+    },
+}
+
+with open(out_path, "w") as f:
+    json.dump(record, f, indent=2)
+    f.write("\n")
+PYEOF
+
+    log "  -> NEGATIVE RESULT recorded at ${outfile}"
+}
+
+CURRENT_DISABLE_WP_CRON="true"
+
+set_disable_wp_cron() {
+    local desired="$1"
+    if [ "$desired" != "$CURRENT_DISABLE_WP_CRON" ]; then
+        "$STACK" set-disable-wp-cron "$desired" >&2
+        CURRENT_DISABLE_WP_CRON="$desired"
+    fi
+}
+
+# Discovered the hard way running this matrix for real: Action Scheduler's
+# async-dispatch guard (section 2) only gates the DECISION to start a NEW
+# loopback (maybe_dispatch_async_request()'s own filter check); it does
+# nothing to an async loopback that was ALREADY dispatched and is still
+# looping through due batches on its own sleep/retry cadence (see
+# action_scheduler_async_request_sleep_seconds in the action-scheduler
+# plugin -- each finished batch's own 'shutdown' can dispatch ANOTHER
+# loopback to keep going, independent of whatever guard state applies to a
+# brand new, unrelated request). A scenario's own settle-poll
+# (wpcas_probe_poll_until_settled()) only watches ITS OWN seeded batch and
+# returns once that specific batch's pending count stabilises -- it has no
+# way to know whether the same chain of loopbacks that drained it is still
+# alive and about to pick up whatever the NEXT scenario's own reset()
+# seeds moments later. Observed directly while building this matrix: an
+# unarmed admin-page-load scenario's straggling loopback chain silently ate
+# into the very next (armed) scenario's freshly-seeded queue -- and, worse,
+# a stray loopback from that same chain can race the armed scenario's own
+# triggering request to write docker/mu-plugins/wpcas-dispatch-decision-
+# probe.php's shared option, making an armed run's own dispatch_decision
+# read back as `allowed: true` even though ITS OWN filter check really did
+# return false -- not because the guard failed, but because the guard
+# never got a chance to run against a dispatch chain that started before
+# it was armed. Polling the pending count out-of-band (via wp-cli, never
+# HTTP, so this never competes with the thing being measured for a
+# php-cli-server worker) for three consecutive equal reads, 3s apart,
+# before letting the NEXT scenario's reset run, gives such a chain a
+# generous bounded window to actually finish -- not a fabrication of any
+# figure, just waiting for real background work already in flight to
+# actually complete before the next real measurement begins.
+wait_for_pending_count_stable() {
+    local max_checks="${1:-20}" required_streak="${2:-3}"
+    local previous="" current streak=0
+    local i
+    for i in $( seq 1 "$max_checks" ); do
+        current="$("$STACK" exec wp eval-file --use-include /opt/wpcas-tools/pending-count.php --allow-root 2>/dev/null | tail -n 1 | tr -d '\r')"
+        if [ -n "$previous" ] && [ "$current" = "$previous" ]; then
+            streak=$(( streak + 1 ))
+            if [ "$streak" -ge "$required_streak" ]; then
+                return 0
+            fi
+        else
+            streak=0
+        fi
+        previous="$current"
+        sleep 3
+    done
+    log "  (pending count did not settle to ${required_streak} consecutive equal reads within $(( max_checks * 3 ))s -- proceeding anyway; last read was ${current:-unknown})"
+    return 0
+}
+
+# Resets and preflights, with a bounded retry -- a genuine, honestly-
+# observed transient (most commonly: an async-dispatch straggler from a
+# PRECEDING deliberately-unarmed scenario still landing a claims-table row
+# a moment after this scenario's own reset already cleared it) can make a
+# preflight fail even though the site is, in truth, about to settle on its
+# own within a couple of seconds. Retrying reset+preflight is not
+# fabricating anything -- it is re-taking the exact same real measurement
+# after real wall-clock time has passed, same principle as
+# wpcas_probe_poll_until_settled()'s own bounded wait elsewhere in this
+# series. Only reset+preflight are retried here; the actual measurement
+# command below runs at most once per scenario, and a genuine failure
+# there is still recorded as a negative result, not retried into a
+# different answer.
+#
+# $1 label, $2 guard-sections, $3 disable_wp_cron, $4 max attempts.
+# Returns 0 and leaves nothing to report if preflight ultimately passed;
+# returns 1 after recording a negative result if every attempt failed.
+reset_and_preflight_with_retry() {
+    local label="$1" guard_sections="$2" disable_wp_cron="$3" max_attempts="${4:-3}"
+    local attempt
+
+    for attempt in $( seq 1 "$max_attempts" ); do
+        local reset_log
+        reset_log="$(mktemp)"
+        "$STACK" reset "$SEED_COUNT" --due-now > "$reset_log" 2>&1
+        local reset_rc=$?
+        cat "$reset_log" >&2
+        if [ "$reset_rc" -ne 0 ]; then
+            log "!!! RESET FAILED for scenario '${label}' (attempt ${attempt}/${max_attempts}, exit ${reset_rc})."
+            if [ "$attempt" -eq "$max_attempts" ]; then
+                log "!!! Giving up after ${max_attempts} attempt(s) -- aborting this run, recording a negative result, continuing the matrix."
+                record_negative "$label" "reset_failed" "$reset_rc" "$reset_log" "$guard_sections" "$disable_wp_cron"
+                rm -f "$reset_log"
+                return 1
+            fi
+            rm -f "$reset_log"
+            sleep 3
+            continue
+        fi
+        rm -f "$reset_log"
+
+        local preflight_log
+        preflight_log="$(mktemp)"
+        "$STACK" preflight > "$preflight_log" 2>&1
+        local preflight_rc=$?
+        cat "$preflight_log" >&2
+        if [ "$preflight_rc" -ne 0 ]; then
+            log "!!! PREFLIGHT FAILED for scenario '${label}' (attempt ${attempt}/${max_attempts}, exit ${preflight_rc})."
+            if [ "$attempt" -eq "$max_attempts" ]; then
+                log "!!! Giving up after ${max_attempts} attempt(s) -- aborting this run, recording a negative result, continuing the matrix."
+                record_negative "$label" "preflight_failed" "$preflight_rc" "$preflight_log" "$guard_sections" "$disable_wp_cron"
+                rm -f "$preflight_log"
+                return 1
+            fi
+            log "    Retrying in 3s -- most commonly a straggling async dispatch from a preceding deliberately-unarmed scenario, not a broken install."
+            rm -f "$preflight_log"
+            sleep 3
+            continue
+        fi
+        rm -f "$preflight_log"
+        return 0
+    done
+
+    return 1
+}
+
+# $1 label, $2 guard-sections (space-separated, "" for fully disarmed),
+# $3 disable_wp_cron (true|false), $4... the measurement command (argv).
+run_scenario() {
+    local label="$1" guard_sections="$2" disable_wp_cron="$3"
+    shift 3
+    local cmd=("$@")
+
+    TOTAL_COUNT=$(( TOTAL_COUNT + 1 ))
+    banner "Scenario: ${label}  (guard: [${guard_sections}], disable_wp_cron=${disable_wp_cron})"
+
+    if [ -n "$guard_sections" ]; then
+        # shellcheck disable=SC2086 -- guard_sections is a deliberate
+        # space-separated list of bare digit arguments, word-splitting is
+        # exactly what bin/guard's own argv expects.
+        "$GUARD" arm $guard_sections >&2
+    else
+        "$GUARD" arm >&2
+    fi
+
+    set_disable_wp_cron "$disable_wp_cron"
+
+    if ! reset_and_preflight_with_retry "$label" "$guard_sections" "$disable_wp_cron" 3; then
+        FAILED_COUNT=$(( FAILED_COUNT + 1 ))
+        SUMMARY_ROWS+=("${label}|NEGATIVE|reset_or_preflight_failed")
+        return
+    fi
+
+    # `bin/stack measure*` subcommands do NOT print the record to their own
+    # stdout -- see bin/stack's own `measure|measure-http)`/etc. cases: they
+    # redirect the underlying `wp eval-file` call's stdout straight to a
+    # temp file, then `mv` it to $RESULTS_DIR/<timestamp>-<control>.json
+    # (which is $MATRIX_DIR here, via WPCAS_RESULTS_DIR above) once the
+    # command exits 0, and only ever print "Result record written to
+    # <path>" to STDERR. This wrapper's job is therefore to run the
+    # command, then find that path back out of its own STDERR -- not to
+    # capture stdout, which is empty by design.
+    local run_log record_file
+    run_log="$(mktemp)"
+    "${cmd[@]}" > /dev/null 2> "$run_log"
+    local run_rc=$?
+    cat "$run_log" >&2
+    if [ "$run_rc" -ne 0 ]; then
+        log "!!! MEASURE COMMAND FAILED for scenario '${label}' (exit ${run_rc}) -- aborting this run, recording a negative result, continuing the matrix."
+        record_negative "$label" "measure_command_failed" "$run_rc" "$run_log" "$guard_sections" "$disable_wp_cron"
+        rm -f "$run_log"
+        FAILED_COUNT=$(( FAILED_COUNT + 1 ))
+        SUMMARY_ROWS+=("${label}|NEGATIVE|measure_command_failed")
+        return
+    fi
+
+    record_file="$(grep -oE 'Result record written to .+$' "$run_log" | sed -E 's/^Result record written to //' | tail -n 1)"
+    if [ -z "$record_file" ] || [ ! -f "$record_file" ]; then
+        log "!!! MEASURE COMMAND for scenario '${label}' exited 0 but no result-record path could be found in its own output -- aborting this run, recording a negative result, continuing the matrix."
+        record_negative "$label" "record_file_not_found" 0 "$run_log" "$guard_sections" "$disable_wp_cron"
+        rm -f "$run_log"
+        FAILED_COUNT=$(( FAILED_COUNT + 1 ))
+        SUMMARY_ROWS+=("${label}|NEGATIVE|record_file_not_found")
+        return
+    fi
+    rm -f "$run_log"
+
+    # Stamp this scenario's own arming/cron-state provenance directly onto
+    # the record -- bin/generate-report then reads a scenario's armed
+    # sections from the record itself, not by pattern-matching its label
+    # string, so the report's "Armed" column is exactly what this run
+    # actually armed, not an inference.
+    python3 - "$record_file" "$label" "$guard_sections" "$disable_wp_cron" "$SEED_COUNT" <<'PYEOF'
+import json
+import sys
+
+record_path, label, guard_sections, disable_wp_cron, seed_count = sys.argv[1:6]
+
+with open(record_path, "r") as f:
+    record = json.load(f)
+
+record["matrix_context"] = {
+    "scenario_label": label,
+    "armed_sections": [int(s) for s in guard_sections.split()] if guard_sections.strip() else [],
+    "disable_wp_cron": disable_wp_cron == "true",
+    "seed_count": int(seed_count),
+}
+
+with open(record_path, "w") as f:
+    json.dump(record, f, indent=2)
+    f.write("\n")
+PYEOF
+
+    local outcome_desc
+    outcome_desc="$(python3 -c "
+import json
+d = json.load(open('${record_file}'))
+o = d.get('outcome', {})
+print(f\"drained={o.get('drained')} fully_drained={o.get('fully_drained')}\")
+" 2>/dev/null || echo 'unparseable')"
+
+    log "Scenario '${label}' OK -- ${outcome_desc} -- record: ${record_file}"
+    SUMMARY_ROWS+=("${label}|OK|${outcome_desc}")
+
+    wait_for_pending_count_stable
+}
+
+run_occupancy_scenario() {
+    local label="occupancy-drain"
+    TOTAL_COUNT=$(( TOTAL_COUNT + 1 ))
+    banner "Scenario: ${label} (guard fully disarmed -- needs a real async dispatch to observe)"
+
+    "$GUARD" arm >&2
+    set_disable_wp_cron true
+
+    # `bin/stack occupancy` does its own reset+preflight internally, but
+    # this wrapper can't retry *inside* that call -- so it pre-checks here
+    # instead, using the exact same retry-tolerant helper every other
+    # scenario uses, so a straggling async dispatch from a preceding
+    # deliberately-unarmed scenario gets the same chance to settle before
+    # occupancy's own reset+preflight runs immediately afterward.
+    if ! reset_and_preflight_with_retry "$label" "" "true" 3; then
+        FAILED_COUNT=$(( FAILED_COUNT + 1 ))
+        SUMMARY_ROWS+=("${label}|NEGATIVE|reset_or_preflight_failed")
+        return
+    fi
+
+    local run_log record_file
+    run_log="$(mktemp)"
+    record_file="${MATRIX_DIR}/${label}.json"
+    "$STACK" occupancy "$SEED_COUNT" > "$record_file" 2> "$run_log"
+    local run_rc=$?
+    cat "$run_log" >&2
+    if [ "$run_rc" -ne 0 ]; then
+        log "!!! OCCUPANCY MEASUREMENT FAILED (exit ${run_rc}) -- aborting this run, recording a negative result, continuing the matrix."
+        rm -f "$record_file"
+        record_negative "$label" "occupancy_command_failed" "$run_rc" "$run_log"
+        rm -f "$run_log"
+        FAILED_COUNT=$(( FAILED_COUNT + 1 ))
+        SUMMARY_ROWS+=("${label}|NEGATIVE|occupancy_command_failed")
+        return
+    fi
+    rm -f "$run_log"
+
+    local result_kind
+    result_kind="$(python3 -c "import json; print(json.load(open('${record_file}')).get('result_kind', 'unknown'))" 2>/dev/null || echo 'unparseable')"
+
+    if [ "$result_kind" != "measured" ]; then
+        log "Occupancy measurement completed but reported result_kind='${result_kind}' (see its own 'notes' field) -- kept as a real, honestly-reported negative/partial result, not discarded."
+        FAILED_COUNT=$(( FAILED_COUNT + 1 ))
+    else
+        log "Scenario '${label}' OK -- record: ${record_file}"
+    fi
+    SUMMARY_ROWS+=("${label}|${result_kind}|see docs/measurements occupancy figures")
+}
+
+run_unhook_timing_scenario() {
+    local label="unhook-timing"
+    TOTAL_COUNT=$(( TOTAL_COUNT + 1 ))
+    banner "Scenario: ${label} (self-managed arm/disarm -- see bin/measure-unhook-timing)"
+
+    local stdout_file stderr_file record_file
+    stdout_file="$(mktemp)"
+    stderr_file="$(mktemp)"
+    record_file="${MATRIX_DIR}/${label}.json"
+
+    "$UNHOOK_TIMING" > "$stdout_file" 2> "$stderr_file"
+    local run_rc=$?
+    cat "$stderr_file" >&2
+    cat "$stdout_file" >&2
+
+    if [ "$run_rc" -ne 0 ]; then
+        log "!!! UNHOOK-TIMING MEASUREMENT FAILED (exit ${run_rc}) -- aborting this run, recording a negative result, continuing the matrix."
+        record_negative "$label" "unhook_timing_failed" "$run_rc" "$stderr_file"
+        rm -f "$stdout_file" "$stderr_file"
+        FAILED_COUNT=$(( FAILED_COUNT + 1 ))
+        SUMMARY_ROWS+=("${label}|NEGATIVE|unhook_timing_failed")
+        return
+    fi
+
+    python3 - "$stdout_file" "$stderr_file" "$record_file" <<'PYEOF'
+import json
+import sys
+
+stdout_path, stderr_path, out_path = sys.argv[1:4]
+
+with open(stderr_path, "r", errors="replace") as f:
+    stderr_text = f.read()
+with open(stdout_path, "r", errors="replace") as f:
+    table_markdown = f.read().strip()
+
+# bin/measure-unhook-timing prints each raw request's JSON via
+# `echo "$REQUEST_N_JSON" >&2` -- curl returns it exactly as the probe
+# emitted it, which is pretty-printed across multiple lines, not a single
+# JSON-per-line blob. Scanned here with a real streaming JSON decoder
+# (json.JSONDecoder.raw_decode at every '{' it finds) rather than assumed
+# to be one object per line, which would silently find nothing on
+# multi-line JSON exactly like this.
+decoder = json.JSONDecoder()
+json_objects = []
+idx = 0
+while True:
+    start = stderr_text.find("{", idx)
+    if -1 == start:
+        break
+    try:
+        obj, end = decoder.raw_decode(stderr_text, start)
+        json_objects.append(obj)
+        idx = end
+    except json.JSONDecodeError:
+        idx = start + 1
+
+request_1 = json_objects[0] if len(json_objects) > 0 else None
+request_2 = json_objects[1] if len(json_objects) > 1 else None
+
+record = {
+    "result_kind": "measured" if (request_1 is not None and request_2 is not None) else "negative",
+    "measurement_kind": "unhook-timing",
+    "action_scheduler_version": (request_1 or {}).get("action_scheduler_version", "unknown"),
+    "request_1_guard_disarmed": request_1,
+    "request_2_section_4_armed": request_2,
+    "table_markdown": table_markdown,
+}
+
+with open(out_path, "w") as f:
+    json.dump(record, f, indent=2)
+    f.write("\n")
+PYEOF
+
+    rm -f "$stdout_file" "$stderr_file"
+    log "Scenario '${label}' OK -- record: ${record_file}"
+    SUMMARY_ROWS+=("${label}|OK|see unhook timing table")
+}
+
+# --- Liveness check: fail fast with one clear message rather than 14 ------
+# confusing cascading failures if the stack was never brought up.
+banner "Checking the stack is up (bin/stack up)..."
+if ! "$STACK" exec wp core is-installed --allow-root >/dev/null 2>&1; then
+    log "ERROR: the stack does not appear to be up/installed. Run 'bin/stack up' first."
+    exit 1
+fi
+log "Stack is up."
+
+# --- Warm-up: wait for Action Scheduler's own WP-Cron event to be due -----
+#
+# Discovered the hard way running this matrix for real: Action Scheduler
+# registers its own queue-runner as a *recurring* WP-Cron event
+# ('action_scheduler_run_queue', a 1-minute interval, scheduled from
+# whenever this install first bootstrapped) -- completely independent of
+# whether our own probe actions are due. A GET to wp-cron.php only
+# processes WP-Cron events whose OWN next_run time has already passed; if
+# this matrix runs within the first minute after `bin/stack up` finishes
+# and hits that GET before this recurring event's first due time, it
+# observes a legitimate but misleading "0 drained" on every HTTP-vector
+# scenario -- not because any guard blocked anything, but because the
+# underlying WP-Cron event had nothing to fire yet. That is a real
+# measurement, but not the story any of these scenarios are supposed to
+# tell (a 0-drain outcome must be attributable to a guard, not to a race
+# with this container's own uptime) -- so every scenario that depends on
+# WP-Cron firing waits here, once, for that event to actually be due.
+wait_for_action_scheduler_cron_due() {
+    banner "Warm-up: waiting for Action Scheduler's own 'action_scheduler_run_queue' WP-Cron event to become due (its own ~1-minute interval, unrelated to the probe queue) -- at most 90s."
+    local deadline
+    deadline=$(( $(date +%s) + 90 ))
+    local tmp
+    tmp="$(mktemp)"
+    while true; do
+        "$STACK" exec wp cron event list --hook=action_scheduler_run_queue --format=json --allow-root > "$tmp" 2>/dev/null
+        local status
+        status="$(python3 -c "
+import json
+try:
+    with open('${tmp}') as f:
+        events = json.load(f)
+except Exception:
+    print('unknown')
+else:
+    if not events:
+        print('missing')
+    else:
+        print('due' if events[0].get('next_run_relative') == 'now' else 'not_due')
+" 2>/dev/null)"
+
+        if [ "$status" = "due" ]; then
+            log "Action Scheduler's queue-runner WP-Cron event is due -- proceeding."
+            break
+        fi
+        if [ "$status" = "missing" ] || [ "$status" = "unknown" ]; then
+            log "WARNING: could not read the action_scheduler_run_queue WP-Cron event (status=${status}) -- proceeding anyway; a scenario's own preflight/outcome will still catch a genuinely broken install."
+            break
+        fi
+        if [ "$(date +%s)" -ge "$deadline" ]; then
+            log "WARNING: timed out after 90s waiting for the queue-runner event to become due -- proceeding anyway; HTTP-vector scenarios may show a misleadingly low drain count if it still isn't due."
+            break
+        fi
+        sleep 2
+    done
+    rm -f "$tmp"
+}
+
+wait_for_action_scheduler_cron_due
+
+# --- The scenario matrix, in a safe, deliberate order ---------------------
+#
+# CLI controls first (guard state does not affect them at all -- every
+# guard section targets an HTTP or async-ajax entry point, never WP-CLI;
+# DOING_CRON-for-CLI, not any of these guard files, is what keeps a CLI
+# run from self-draining the seed -- see docker/Dockerfile), then each HTTP
+# vector's own unarmed baseline before its armed scenario(s), grouped by
+# vector so guard-state changes stay easy to follow in the log.
+
+run_scenario cli-wp-cron "" true "$STACK" measure wp-cron
+run_scenario cli-action-scheduler "" true "$STACK" measure action-scheduler
+
+# `action_scheduler_run_queue` is a RECURRING (1-minute) WP-Cron event --
+# once one direct hit to wp-cron.php actually fires it, it reschedules
+# itself ~60s into the future and the very next direct hit legitimately
+# finds nothing due, independent of any guard. http-cron-armed is expected
+# to be blocked at the HTTP layer (403) before WP-Cron's own due-time check
+# ever runs, so it doesn't need this wait; http-cron-unarmed and
+# http-cron-armed-cron-enabled both need the event to actually be due to
+# tell a "guard did/didn't block it" story rather than a "got unlucky on
+# timing" one, so each waits for it immediately before its own request.
+wait_for_action_scheduler_cron_due
+run_scenario http-cron-unarmed "" true "$STACK" measure-http http-cron-unarmed
+run_scenario http-cron-armed "1" true "$STACK" measure-http http-cron-armed
+wait_for_action_scheduler_cron_due
+run_scenario http-cron-armed-cron-enabled "1" false "$STACK" measure-http http-cron-armed-cron-enabled
+set_disable_wp_cron true
+
+run_scenario async-ajax-unarmed "" true "$STACK" measure-async-ajax async-ajax-unarmed
+run_scenario async-ajax-sections-1-2-3-armed "1 2 3" true "$STACK" measure-async-ajax async-ajax-sections-1-2-3-armed
+run_scenario async-ajax-unhook-armed "4" true "$STACK" measure-async-ajax async-ajax-unhook-armed
+
+run_scenario admin-page-load-unarmed "" true "$STACK" measure-admin-page-load admin-page-load-unarmed
+run_scenario admin-page-load-section-2-armed "2" true "$STACK" measure-admin-page-load admin-page-load-section-2-armed
+
+# Issue #10 decision: no "unarmed" manual-run scenario. Unlike every other
+# vector, manual-run's underlying page load (tools.php?page=action-scheduler)
+# is itself an ordinary is_admin() request -- with section 2 NOT armed, that
+# page load's own async dispatch races with the single deliberate click,
+# draining most of the queue through an uncontrolled side channel instead
+# of the one action this vector is about, and leaves a straggling async
+# worker that destabilizes the NEXT scenario's reset/preflight (observed
+# firsthand while building this matrix -- see this ticket's PR `## Decisions`).
+# The canonical scenario -- all four sections armed, section 2 suppressing
+# that exact race -- is the only one that isolates the single click cleanly,
+# so it is the only manual-run scenario this matrix runs.
+run_scenario manual-run-sections-1-2-3-4-armed "1 2 3 4" true "$STACK" measure-manual-run manual-run-sections-1-2-3-4-armed
+
+run_occupancy_scenario
+run_unhook_timing_scenario
+
+# --- End-of-matrix cleanup: leave the stack fully disarmed and cron-default
+"$GUARD" arm >&2
+set_disable_wp_cron true
+
+# --- Summary ---------------------------------------------------------------
+echo ""
+echo "Matrix run ${RUN_TIMESTAMP} -- ${TOTAL_COUNT} scenario(s), $(( TOTAL_COUNT - FAILED_COUNT )) OK, ${FAILED_COUNT} negative."
+echo "Records written under: ${MATRIX_DIR}"
+echo ""
+printf '%-42s %-10s %s\n' "SCENARIO" "STATUS" "OUTCOME"
+for row in "${SUMMARY_ROWS[@]}"; do
+    IFS='|' read -r r_label r_status r_outcome <<< "$row"
+    printf '%-42s %-10s %s\n' "$r_label" "$r_status" "$r_outcome"
+done
+
+if [ "$FAILED_COUNT" -gt 0 ]; then
+    echo ""
+    echo "${FAILED_COUNT} scenario(s) produced a negative result -- see the .negative.json files under ${MATRIX_DIR} and bin/generate-report's 'Not verified' section."
+fi
+
+exit 0

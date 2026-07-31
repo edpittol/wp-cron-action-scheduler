@@ -106,23 +106,24 @@ wpcas_test_assert_same( 'empty contexts: other', array(), $summary['other'], $fa
 // --- wpcas_result_record_build() ---------------------------------------
 
 $facts = array(
-	'control'           => 'wp-cron',
-	'command_argv'      => 'wp cron event run --due-now',
-	'command_exit_code' => 0,
-	'http_status'       => null,
-	'started_at'        => '2026-07-28T18:00:00+00:00',
-	'finished_at'       => '2026-07-28T18:00:11+00:00',
-	'elapsed_seconds'   => 11.25,
-	'preflight'         => array( 'ok' => true, 'pending_count' => 50 ),
-	'pending_before'    => 50,
-	'pending_after'     => 0,
-	'log_messages'      => array( 'action started via WP Cron', 'action complete via WP Cron' ),
-	'probe_records'     => array( array( 'sapi' => 'cli', 'pid' => 123, 'timestamp' => 1.0 ) ),
+	'control'                 => 'wp-cron',
+	'command_argv'            => 'wp cron event run --due-now',
+	'command_exit_code'       => 0,
+	'http_status'             => null,
+	'started_at'              => '2026-07-28T18:00:00+00:00',
+	'finished_at'             => '2026-07-28T18:00:11+00:00',
+	'elapsed_seconds'         => 11.25,
+	'preflight'               => array( 'ok' => true, 'pending_count' => 50 ),
+	'pending_before'          => 50,
+	'pending_after'           => 0,
+	'log_messages'            => array( 'action started via WP Cron', 'action complete via WP Cron' ),
+	'probe_records'           => array( array( 'sapi' => 'cli', 'pid' => 123, 'timestamp' => 1.0 ) ),
+	'cron_in_progress_after'  => false,
 );
 
 $record = wpcas_result_record_build( $facts );
 
-wpcas_test_assert_same( 'record: schema_version', 2, $record['schema_version'], $failures );
+wpcas_test_assert_same( 'record: schema_version', 3, $record['schema_version'], $failures );
 wpcas_test_assert_same( 'record: control', 'wp-cron', $record['control'], $failures );
 wpcas_test_assert_same( 'record: command argv', 'wp cron event run --due-now', $record['command']['argv'], $failures );
 wpcas_test_assert_same( 'record: command exit_code', 0, $record['command']['exit_code'], $failures );
@@ -134,6 +135,23 @@ wpcas_test_assert_same( 'record: outcome drained', 50, $record['outcome']['drain
 wpcas_test_assert_same( 'record: outcome fully_drained', true, $record['outcome']['fully_drained'], $failures );
 wpcas_test_assert_same( 'record: execution_contexts started WP Cron', 1, $record['execution_contexts']['started']['WP Cron'], $failures );
 wpcas_test_assert_same( 'record: probe_records passthrough', $facts['probe_records'], $record['probe_records'], $failures );
+wpcas_test_assert_same( 'record: cron_in_progress_after passthrough (false)', false, $record['cron_in_progress_after'], $failures );
+
+// The exact acceptance criterion this field exists to make provable from
+// the committed record alone (issue #5's armed HTTP-vector scenario):
+// "no cron-in-progress transient left behind" must be readable without
+// taking an uncommitted follow-up preflight on trust. A stray leftover
+// transient (the false-result class this whole pipeline exists to catch)
+// must come through as `true`, not silently coerced.
+$facts_with_leftover_transient                            = $facts;
+$facts_with_leftover_transient['cron_in_progress_after']  = true;
+$record_with_leftover_transient                           = wpcas_result_record_build( $facts_with_leftover_transient );
+wpcas_test_assert_same(
+	'record: cron_in_progress_after passthrough (true)',
+	true,
+	$record_with_leftover_transient['cron_in_progress_after'],
+	$failures
+);
 
 // The ticket's central invariant: outcome must be derived purely from
 // pending_before/pending_after (and the probe's own independent
@@ -186,7 +204,56 @@ $http_vector_facts['probe_records']    = array();
 $http_vector_record                    = wpcas_result_record_build( $http_vector_facts );
 wpcas_test_assert_same( 'http-vector row: command is null, not an object', null, $http_vector_record['command'], $failures );
 wpcas_test_assert_same( 'http-vector row: http_status carried through', 200, $http_vector_record['http_status'], $failures );
-wpcas_test_assert_same( 'http-vector row: schema_version unchanged', 2, $http_vector_record['schema_version'], $failures );
+wpcas_test_assert_same( 'http-vector row: schema_version', 3, $http_vector_record['schema_version'], $failures );
+
+// --- canary_line (issue #6) ----------------------------------------------
+//
+// Additive, backward-compatible field: every existing caller of this
+// function (measure.php's two CLI-control rows) never passes
+// 'canary_line' at all, so it must default to null rather than raising a
+// notice or being silently omitted from the record -- the field is
+// always present, same discipline as http_status/command.
+wpcas_test_assert_same( 'record without canary_line: defaults to null', null, $record['canary_line'], $failures );
+
+// The whole point of this ticket's own acceptance criterion ("the canary
+// line must be captured into the result record, not just emitted"): when
+// a caller does have a canary line, it comes through verbatim.
+$facts_with_canary                 = $http_vector_facts;
+$facts_with_canary['canary_line']  = '[cron-guard] queue run outside CLI: sapi=cli-server uri=/wp-admin/admin-ajax.php?action=as_async_request_queue_runner ip=127.0.0.1';
+$record_with_canary                = wpcas_result_record_build( $facts_with_canary );
+wpcas_test_assert_same( 'record with canary_line: passed through verbatim', $facts_with_canary['canary_line'], $record_with_canary['canary_line'], $failures );
+
+// --- canary_line / canary_fired (issue #7) -------------------------------
+//
+// Additive, backward-compatible fields: every existing caller of this
+// function (measure.php's two CLI-control rows, measure-http.php's
+// HTTP-vector row) never passes 'canary_line' at all, so it must default
+// to null (and canary_fired to false) rather than raising a notice or
+// being silently omitted from the record -- both fields are always
+// present, same discipline as http_status/command.
+wpcas_test_assert_same( 'record without canary_line: defaults to null', null, $record['canary_line'], $failures );
+wpcas_test_assert_same( 'record without canary_line: canary_fired defaults to false', false, $record['canary_fired'], $failures );
+
+// The headline case a fired canary produces: the line is carried through
+// verbatim, and canary_fired flips to true alongside it.
+$facts_with_canary                = $http_vector_facts;
+$facts_with_canary['canary_line'] = '[cron-guard] queue run outside CLI: sapi=cli-server uri=/wp-admin/index.php ip=127.0.0.1';
+$record_with_canary               = wpcas_result_record_build( $facts_with_canary );
+wpcas_test_assert_same( 'record with canary_line: passed through verbatim', $facts_with_canary['canary_line'], $record_with_canary['canary_line'], $failures );
+wpcas_test_assert_same( 'record with canary_line: canary_fired is true', true, $record_with_canary['canary_fired'], $failures );
+
+// This ticket's own headline negative case (the manual-run vector, which
+// calls process_action() directly and never runs the queue hook the
+// canary listens on): a record that explicitly passes canary_line as null
+// must report canary_fired === false, not merely omit the field -- this
+// is what lets a reader trust "the canary did not fire" instead of
+// mistaking a missing field for an oversight.
+$facts_manual_run_no_canary                = $http_vector_facts;
+$facts_manual_run_no_canary['control']     = 'manual-run:sections-1-2-3-4-armed';
+$facts_manual_run_no_canary['canary_line'] = null;
+$record_manual_run_no_canary               = wpcas_result_record_build( $facts_manual_run_no_canary );
+wpcas_test_assert_same( 'manual-run row: canary_line is null', null, $record_manual_run_no_canary['canary_line'], $failures );
+wpcas_test_assert_same( 'manual-run row: canary_fired is false', false, $record_manual_run_no_canary['canary_fired'], $failures );
 
 if ( array() !== $failures ) {
 	fwrite( STDERR, "FAIL\n" );

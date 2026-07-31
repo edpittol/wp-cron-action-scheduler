@@ -10,13 +10,27 @@ services:
       - "${STACK_PORT:-8080}:${STACK_PORT:-8080}"
     environment:
       STACK_PORT: "${STACK_PORT:-8080}"
+      # Issue #5: DISABLE_WP_CRON must be switchable without rebuilding
+      # the image -- wp-config.php (docker/Dockerfile) reads this at
+      # runtime via getenv(). `bin/stack set-disable-wp-cron <true|false>`
+      # recreates just this container with a new value; see that
+      # subcommand's own comment in bin/stack.
+      WPCAS_DISABLE_WP_CRON: "${WPCAS_DISABLE_WP_CRON:-true}"
     volumes:
       # Only the actual SQLite data file persists across `up`/`down`.
-      # Everything else under wp-content (plugins, mu-plugins, the db.php
-      # drop-in) comes straight from the image, so rebuilding with a new
+      # Everything else under wp-content (plugins, the db.php drop-in)
+      # comes straight from the image, so rebuilding with a new
       # ACTION_SCHEDULER_VERSION takes effect on the next `up` without
       # needing a volume wipe.
       - wp-database:/var/www/html/wp-content/database
+      # mu-plugins is bind-mounted, not baked in, so `bin/guard arm` can
+      # add/remove guard files on the host and have WordPress see the
+      # change on its very next request -- no rebuild, no restart.
+      # docker/mu-plugins/ always contains the #1 probe mu-plugin plus
+      # whichever of the four guard files (copied in from
+      # docker/mu-plugins-available/, which is not itself mounted or
+      # scanned by WordPress) are currently armed.
+      - ./docker/mu-plugins:/var/www/html/wp-content/mu-plugins
 
 volumes:
   wp-database:

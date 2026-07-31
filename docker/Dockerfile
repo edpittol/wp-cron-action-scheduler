@@ -21,6 +21,30 @@ LABEL org.opencontainers.image.description="WordPress (PHP built-in server + SQL
 # WordPress core tarball.
 RUN echo "memory_limit = 512M" > /usr/local/etc/php/conf.d/memory-limit.ini
 
+# Issue #6's canary guard (docker/mu-plugins-available/30-log-non-cli-canary.php)
+# writes to PHP's error log. Left at its default, PHP's `error_log` ini
+# directive is empty, which for the built-in `php -S` server means every
+# error_log() call goes to the server process's own STDERR -- captured (if
+# at all) by whatever runs the container, not by any file this repo's
+# tooling can read back to confirm the canary actually fired. Pointing
+# `error_log` at a concrete, writable path here means the canary's
+# destination is a known file both the serving process (entrypoint's
+# `php -S`) and any `wp` CLI invocation (same php.ini/conf.d) write to and
+# can be read back from -- and, critically, something
+# docker/wp-cli/measure-async-ajax.php can *verify* is actually being
+# written to before trusting its silence or its content, rather than
+# assuming a destination that might quietly be going nowhere readable.
+#
+# Issue #7's admin-page-load vector uses the same destination the same
+# way; its manual-run vector reuses it to confirm the canary genuinely
+# does NOT fire on that path -- a documented blind spot, not an
+# assumption. Both of #7's measure-*.php scripts verify this file is
+# actually writable before trusting its silence or its content, same
+# discipline as measure-async-ajax.php above.
+RUN mkdir -p /var/log/wpcas \
+    && touch /var/log/wpcas/php-error.log \
+    && printf 'log_errors = On\nerror_log = /var/log/wpcas/php-error.log\n' > /usr/local/etc/php/conf.d/error-log.ini
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         unzip \
@@ -82,13 +106,57 @@ RUN wp core download --allow-root --locale=en_US
 # the implicit spawn removes the self-inflicted churn without touching
 # either of those explicit, working paths, or Action Scheduler's separate
 # async-request dispatcher (unaffected by this constant).
+#
+# Runtime-switchable (issue #5): the value below is no longer the literal
+# `true` issue #2 baked in -- it reads the WPCAS_DISABLE_WP_CRON env var
+# via getenv() on every request, defaulting to true when that var is
+# absent (e.g. this image run directly with plain `docker run`, no
+# compose). docker-compose.yml passes WPCAS_DISABLE_WP_CRON through from
+# the host (see bin/stack's `set-disable-wp-cron` subcommand), so flipping
+# it only requires recreating the container with a new env value -- no
+# image rebuild. This is the "fleet caveat" scenario issue #5 exists to
+# measure: guard section 1 (block HTTP requests to the cron entry point)
+# only triggers while DISABLE_WP_CRON is true, so a site that legitimately
+# depends on the loopback (this constant false) must not lose cron
+# silently just because a shared mu-plugins directory armed that guard.
+# Treats an empty-string env value the same as an absent one (defaults to
+# true) rather than handing '' to filter_var() (which reads it as an
+# invalid/false boolean) -- harmless in practice given
+# `set-disable-wp-cron` only ever writes the literal strings 'true'/'false'
+# and docker-compose.yml's own `${WPCAS_DISABLE_WP_CRON:-true}` default,
+# but an explicit check reads clearer than relying on that.
+# WP-CLI churn guard (issue #5, found while measuring the fleet-caveat
+# scenario, not present in issue #2's original DISABLE_WP_CRON=true
+# default because it masked this entirely): WordPress's own per-bootstrap
+# wp_cron() -> spawn_cron() check runs on every request AND every WP-CLI
+# invocation alike (same mechanism the DISABLE_WP_CRON docblock above
+# already flags), and it is gated on DISABLE_WP_CRON, not on SAPI. With
+# that constant false (required for this scenario), every `wp eval-file`
+# this repo's own tooling runs (seed/reset/preflight/measure*) re-triggers
+# a spawn attempt on its own bootstrap -- which, on this stack's PHP
+# built-in server (no persistent worker pool), does not reliably
+# complete, leaving a stuck "doing_cron" lock that fails the *next*
+# command's preflight, or -- worse -- eventually *does* complete in the
+# background and silently drains the seeded queue outside of any
+# controlled measurement. Neither is what issue #5 is measuring: the
+# vector under test is one explicit, external, unauthenticated GET, not
+# this stack's own tooling accidentally triggering WP-Cron via its
+# incidental bootstrap. `DOING_CRON` is spawn_cron()'s own unconditional
+# early exit (`if ( defined('DOING_CRON') ... ) return false;`,
+# independent of DISABLE_WP_CRON) -- defining it true for every WP-CLI
+# process (WP_CLI is WP-CLI's own always-on constant, defined before
+# wp-config.php loads) suppresses exactly that self-spawn, for every
+# command, regardless of DISABLE_WP_CRON's value. It does not affect this
+# guard's own condition (guard 1 also requires PHP_SAPI !== 'cli', which
+# every WP-CLI process already satisfies) or any of this repo's existing,
+# already-verified CLI controls, which never depended on this constant.
 RUN wp config create --allow-root \
         --dbname=wordpress \
         --dbuser=wordpress \
         --dbpass=wordpress \
         --dbhost=localhost \
         --skip-check \
-        --extra-php="define( 'WP_HOME', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SITEURL', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SQLITE_AST_DRIVER', true ); define( 'DISABLE_WP_CRON', true );"
+        --extra-php="define( 'WP_HOME', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SITEURL', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SQLITE_AST_DRIVER', true ); define( 'DISABLE_WP_CRON', ( false === getenv( 'WPCAS_DISABLE_WP_CRON' ) || '' === getenv( 'WPCAS_DISABLE_WP_CRON' ) ) ? true : filter_var( getenv( 'WPCAS_DISABLE_WP_CRON' ), FILTER_VALIDATE_BOOLEAN ) ); if ( defined( 'WP_CLI' ) && WP_CLI ) { define( 'DOING_CRON', true ); }"
 
 # SQLite Database Integration: install the plugin, then place its db.php
 # drop-in directly. The drop-in's own fallback resolves the plugin folder
@@ -115,6 +183,13 @@ RUN curl -fsSL -o /tmp/action-scheduler.zip \
 
 COPY router.php /var/www/html/router.php
 RUN mkdir -p wp-content/mu-plugins
+# docker-compose.yml bind-mounts docker/mu-plugins/ over this path at
+# runtime (so bin/guard can arm/disarm guard files without a rebuild), so
+# this COPY is shadowed and has no effect when the image is run via
+# `bin/stack`/`docker compose`. It only matters as a fallback for running
+# this image directly (e.g. plain `docker run`, no compose, no bind
+# mount) -- kept for that case, not because it does anything under the
+# normal `bin/stack up` path.
 COPY mu-plugins/wpcas-poc-probe.php /var/www/html/wp-content/mu-plugins/wpcas-poc-probe.php
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

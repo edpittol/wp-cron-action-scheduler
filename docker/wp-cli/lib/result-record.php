@@ -36,6 +36,52 @@ declare( strict_types=1 );
  * and an HTTP status for one vector (e.g. an HTTP endpoint that itself
  * shells out) is free to populate both; nothing here enforces exclusivity,
  * it's just what this ticket's two rows happen to look like.
+ *
+ * schema_version 2 -> 3 (issue #5): added `cron_in_progress_after`, the
+ * boolean "doing_cron" transient state read immediately after the control
+ * ran -- independent of, and gathered the same way as, the `cron_in_progress`
+ * fact already present in every record's `preflight` snapshot (which is
+ * the state *before* the control ran). Issue #5's armed HTTP-vector
+ * scenario has an acceptance criterion of its own beyond the pending-count
+ * delta and the probe's own execution log: "no cron-in-progress transient
+ * left behind." Before this field existed, that criterion was only
+ * provable by taking an uncommitted follow-up `bin/stack preflight` run on
+ * trust -- exactly the kind of unverifiable claim this evidence pipeline
+ * exists to rule out. Always present (never omitted), same as `http_status`
+ * -- every caller of wpcas_result_record_build() (both CLI controls in
+ * docker/wp-cli/measure.php and the HTTP vector in
+ * docker/wp-cli/measure-http.php) gathers and passes it, so every record
+ * from this schema version carries it, whether or not that particular
+ * scenario cares about it.
+ *
+ * `canary_line` / `canary_fired` (added by issues #6/#7, folded into
+ * schema_version 3 additively -- see issue #10's `## Decisions` for why
+ * this didn't warrant its own version bump): the section-3 canary guard's
+ * own log line, when one fired -- see docker/wp-cli/lib/canary.php for how
+ * it's parsed out of PHP's error log, and the various measure-*.php
+ * scripts for how that destination is verified writable before being
+ * trusted. Optional in the input facts (defaults to `null`) so every
+ * caller that never passes it (this ticket's own two CLI-control rows,
+ * plus #5's HTTP-vector row) keeps working unchanged; always present in
+ * the output, same discipline as `http_status`/`command` -- a vector with
+ * no canary guard armed reports `null`, not a missing key. `canary_fired`
+ * is derived (`null !== canary_line`), not a separate input, so the two
+ * can never disagree -- kept as its own boolean anyway (rather than making
+ * a reader infer it from nullability) because issue #7's manual-run vector
+ * needs to state plainly, in the record itself, that the canary did NOT
+ * fire on that path -- a documented blind spot (that vector calls
+ * ActionScheduler_QueueRunner::process_action() directly, bypassing run()
+ * and the 'action_scheduler_before_process_queue' hook the canary listens
+ * on), not evidence of full coverage.
+ *
+ * Fields such as `dispatch_decision`, `settle_poll`, and `guard_state`
+ * (added by #6/#7's own measure-async-ajax.php / measure-admin-page-load.php
+ * / measure-manual-run.php scripts) are layered onto the record returned
+ * by wpcas_result_record_build() by those scripts themselves, as
+ * additional top-level keys -- they never needed a change to this file's
+ * schema function, so they are not enumerated in the @param/@return shapes
+ * below, but they are still real, additive record fields and #10's report
+ * renders them where present.
  */
 
 /**
@@ -128,6 +174,8 @@ function wpcas_result_summarize_execution_contexts( array $messages ): array {
  *     pending_after: int,
  *     log_messages: string[],
  *     probe_records: array<int, array{sapi: string, pid: int, timestamp: float}>,
+ *     cron_in_progress_after: bool,
+ *     canary_line?: string|null,
  * } $facts
  *
  * @return array<string, mixed>
@@ -147,23 +195,42 @@ function wpcas_result_record_build( array $facts ): array {
 		);
 	}
 
+	$canary_line = $facts['canary_line'] ?? null;
+
 	return array(
 		// Bumped 1 -> 2 (issue #4 follow-up): `command` changed from
 		// always-present to nullable, to accommodate the HTTP-vector row
-		// shape #5/#6/#7 will produce (see the module docblock).
-		'schema_version'      => 2,
-		'control'             => $facts['control'],
-		'command'             => $command,
+		// shape #5/#6/#7 will produce.
+		// Bumped 2 -> 3 (issue #5): added `cron_in_progress_after` (see the
+		// module docblock for both bumps).
+		// Issue #10 reconciled #6/#7's `canary_line`/`canary_fired` into
+		// this same schema_version 3 -- additive fields, no further bump
+		// (see the module docblock and issue #10's `## Decisions`).
+		'schema_version'         => 3,
+		'control'                => $facts['control'],
+		'command'                => $command,
 		// Always present (never omitted), independent of `command` -- see
 		// the module docblock for why both fields exist and when each is
 		// populated.
-		'http_status'         => $facts['http_status'],
-		'started_at'          => $facts['started_at'],
-		'finished_at'         => $facts['finished_at'],
-		'elapsed_seconds'     => $facts['elapsed_seconds'],
-		'preflight'           => $facts['preflight'],
-		'outcome'             => $outcome,
-		'execution_contexts'  => wpcas_result_summarize_execution_contexts( $facts['log_messages'] ),
-		'probe_records'       => $facts['probe_records'],
+		'http_status'            => $facts['http_status'],
+		'started_at'             => $facts['started_at'],
+		'finished_at'            => $facts['finished_at'],
+		'elapsed_seconds'        => $facts['elapsed_seconds'],
+		'preflight'              => $facts['preflight'],
+		// The "doing_cron" transient's state immediately after the control
+		// ran -- see the module docblock's schema_version 2 -> 3 note.
+		// `preflight.cron_in_progress` above is the same fact read
+		// *before* the control ran; this is its counterpart.
+		'cron_in_progress_after' => $facts['cron_in_progress_after'],
+		'outcome'                => $outcome,
+		'execution_contexts'     => wpcas_result_summarize_execution_contexts( $facts['log_messages'] ),
+		'probe_records'          => $facts['probe_records'],
+		// Optional in the input facts (see the module docblock); always
+		// present in the output, `null` when no canary fired/applies.
+		'canary_line'            => $canary_line,
+		// Derived, never a separate input -- see the module docblock for
+		// why this is still carried as its own boolean rather than left
+		// for a reader to infer from `canary_line`'s nullability.
+		'canary_fired'           => null !== $canary_line,
 	);
 }
