@@ -1,0 +1,311 @@
+{
+  "schema_version": 3,
+  "control": "async-ajax:async-ajax-sections-1-2-3-armed",
+  "command": null,
+  "http_status": 200,
+  "started_at": "2026-07-29T17:51:12+00:00",
+  "finished_at": "2026-07-29T17:51:36+00:00",
+  "elapsed_seconds": 23.965949058532715,
+  "preflight": {
+    "ok": true,
+    "pending_count": 50,
+    "callback_attached": true,
+    "cron_in_progress": false,
+    "claims_count": 0,
+    "failures": []
+  },
+  "cron_in_progress_after": false,
+  "outcome": {
+    "pending_before": 50,
+    "pending_after": 0,
+    "drained": 50,
+    "fully_drained": true,
+    "probe_executions_observed": 50
+  },
+  "execution_contexts": {
+    "started": {
+      "Async Request": 50
+    },
+    "completed": {
+      "Async Request": 50
+    },
+    "other": {
+      "action created": 50
+    }
+  },
+  "probe_records": [
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347474.969111
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347475.192963
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347475.412672
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347475.634252
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347475.858111
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347476.081928
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347476.313018
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347476.537135
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347476.759531
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347476.976732
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347477.204161
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347477.426356
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347477.653802
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347477.875239
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347478.098748
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347478.319777
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347478.540473
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347478.762645
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347478.977759
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347479.201513
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347479.417812
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347479.637065
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347479.853029
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347480.072572
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347480.291358
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347480.512735
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347480.732053
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347480.950531
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347481.177476
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347481.404622
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347481.624998
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347481.846417
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347482.072101
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347482.290643
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347482.508647
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347482.730725
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347482.951578
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347483.178404
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347483.395977
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347483.620165
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347483.840378
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347484.073567
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347484.309534
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347484.534903
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347484.757445
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347484.97673
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347485.200749
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347485.427471
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347485.653066
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347485.87242
+    }
+  ],
+  "canary_line": "[29-Jul-2026 17:51:12 UTC] [cron-guard] queue run outside CLI: sapi=cli-server uri=/wp-admin/admin-ajax.php?action=as_async_request_queue_runner&nonce=6ed34aeff5 ip=127.0.0.1",
+  "canary_fired": true,
+  "vector": {
+    "name": "unauthenticated-admin-ajax-async-runner",
+    "target_url": "http://localhost:8785/wp-admin/admin-ajax.php?action=as_async_request_queue_runner&nonce=6ed34aeff5",
+    "nonce_action": "as_async_request_queue_runner",
+    "nonce_minted_as_user_id": 0,
+    "transport_error": null
+  },
+  "canary_log_writability": {
+    "path": "/var/log/wpcas/php-error.log",
+    "verified_writable": true
+  },
+  "matrix_context": {
+    "scenario_label": "async-ajax-sections-1-2-3-armed",
+    "armed_sections": [
+      1,
+      2,
+      3
+    ],
+    "disable_wp_cron": true,
+    "seed_count": 50
+  }
+}

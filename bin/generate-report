@@ -1,0 +1,391 @@
+#!/usr/bin/env php
+<?php
+
+declare( strict_types=1 );
+
+/**
+ * Issue #10: renders one bin/measure-matrix run's committed records into a
+ * single, committed Markdown results document.
+ *
+ * Deliberately reads ONLY from results/matrix/<run-timestamp>/ -- never
+ * the top-level results/ directory, which holds the individual example
+ * records #5/#6/#7 committed directly on their own branches. Conflating
+ * those with a fresh matrix run's own output would let a stale, cherry-
+ * picked example stand in for a real, reproduced figure -- exactly what
+ * this ticket's measurement-integrity requirement rules out. See this
+ * repo's issue #10 PR, `## Decisions`, for that convention.
+ *
+ * Every figure in the rendered report traces back to a field read
+ * directly from one of these committed JSON records -- nothing here
+ * computes, rounds, or estimates a figure that isn't already present
+ * verbatim in a record. A scenario that produced a negative result (see
+ * bin/measure-matrix's own record_negative()) is rendered in the
+ * "Not verified" section, explicitly, never silently folded into the
+ * scenario table as if it had succeeded.
+ *
+ * Usage:
+ *   bin/generate-report [run-directory] [output-file]
+ *     run-directory  defaults to the most recently modified directory
+ *                    under results/matrix/
+ *     output-file    defaults to docs/measurements/full-scenario-matrix-report.md
+ */
+
+$repo_root = dirname( __DIR__ );
+
+$run_dir = $argv[1] ?? null;
+if ( null === $run_dir ) {
+	$matrix_root = $repo_root . '/results/matrix';
+	$candidates  = glob( $matrix_root . '/*', GLOB_ONLYDIR );
+	if ( false === $candidates || array() === $candidates ) {
+		fwrite( STDERR, "generate-report: no run directories found under {$matrix_root}. Run bin/measure-matrix first.\n" );
+		exit( 1 );
+	}
+	// Sorted by basename, NOT filemtime: bin/measure-matrix names every run
+	// directory after the UTC timestamp it started (e.g. 20260729T174806Z,
+	// produced by `date -u +%Y%m%dT%H%M%SZ`), which is ISO-8601-shaped --
+	// lexicographic order on that string is exactly chronological order.
+	// filemtime() looked right locally but silently breaks after a fresh
+	// git clone: git sets every checked-out file's mtime to checkout time,
+	// so a repo with two committed runs would have both directories'
+	// mtimes collapse to (effectively) the same instant, making "newest by
+	// filemtime" non-deterministic -- exactly the kind of unverifiable
+	// selection this evidence pipeline exists to rule out. An explicit
+	// run-directory argument (below) always overrides this default.
+	rsort( $candidates );
+	$run_dir = $candidates[0];
+}
+$run_dir = rtrim( (string) $run_dir, '/' );
+
+if ( ! is_dir( $run_dir ) ) {
+	fwrite( STDERR, "generate-report: run directory '{$run_dir}' does not exist.\n" );
+	exit( 1 );
+}
+
+$output_file = $argv[2] ?? ( $repo_root . '/docs/measurements/full-scenario-matrix-report.md' );
+
+$run_timestamp = basename( $run_dir );
+
+// --- Load and classify every record in the run directory --------------------
+
+$files = glob( $run_dir . '/*.json' );
+if ( false === $files ) {
+	$files = array();
+}
+sort( $files );
+
+$scenarios     = array(); // ordinary measured scenario records (have 'outcome')
+$negatives     = array(); // result_kind === 'negative'
+$occupancy     = null;    // the occupancy-drain record, if present
+$unhook_timing = null;    // the unhook-timing record, if present
+$unparseable   = array();
+
+foreach ( $files as $file ) {
+	$raw     = file_get_contents( $file );
+	$decoded = is_string( $raw ) ? json_decode( $raw, true ) : null;
+
+	if ( ! is_array( $decoded ) ) {
+		$unparseable[] = basename( $file );
+		continue;
+	}
+
+	if ( ( $decoded['result_kind'] ?? null ) === 'negative' ) {
+		$decoded['_file'] = basename( $file );
+		$negatives[]      = $decoded;
+		continue;
+	}
+
+	if ( ( $decoded['measurement_kind'] ?? null ) === 'unhook-timing' ) {
+		$unhook_timing = $decoded;
+		continue;
+	}
+
+	if ( array_key_exists( 'workers_total', $decoded ) && array_key_exists( 'trigger', $decoded ) ) {
+		$occupancy = $decoded;
+		if ( ( $decoded['result_kind'] ?? 'measured' ) !== 'measured' ) {
+			// Occupancy's own build function already reports negative/
+			// partial results honestly in-band (see occupancy-assertions.php)
+			// -- surfaced in "Not verified" too so it isn't missed if a
+			// reader skips straight to the occupancy section.
+			$decoded['_file']  = basename( $file );
+			$decoded['reason'] = 'occupancy result_kind=' . ( $decoded['result_kind'] ?? 'unknown' ) . ' -- see notes';
+			$negatives[]       = $decoded;
+		}
+		continue;
+	}
+
+	if ( array_key_exists( 'outcome', $decoded ) ) {
+		$decoded['_file'] = basename( $file );
+		$scenarios[]      = $decoded;
+		continue;
+	}
+
+	$unparseable[] = basename( $file );
+}
+
+// --- Rendering helpers --------------------------------------------------
+
+/**
+ * @param array<int, int> $sections
+ */
+function wpcas_report_armed_label( array $sections ): string {
+	if ( array() === $sections ) {
+		return 'none (fully disarmed)';
+	}
+	sort( $sections );
+	return implode( ', ', array_map( static fn( int $n ): string => (string) $n, $sections ) );
+}
+
+/**
+ * @param array<string, mixed>|null $preflight
+ */
+function wpcas_report_preflight_compact( ?array $preflight ): string {
+	if ( null === $preflight ) {
+		return '(not captured)';
+	}
+
+	return sprintf(
+		'ok=%s pending=%d callback=%s cron_in_progress=%s claims=%d',
+		( $preflight['ok'] ?? false ) ? 'true' : 'false',
+		(int) ( $preflight['pending_count'] ?? -1 ),
+		( $preflight['callback_attached'] ?? false ) ? 'true' : 'false',
+		( $preflight['cron_in_progress'] ?? false ) ? 'true' : 'false',
+		(int) ( $preflight['claims_count'] ?? -1 )
+	);
+}
+
+/**
+ * @param array<string, mixed> $contexts
+ */
+function wpcas_report_contexts_compact( array $contexts ): string {
+	$started = $contexts['started'] ?? array();
+	if ( array() === $started ) {
+		return '(none)';
+	}
+	$parts = array();
+	foreach ( $started as $context => $count ) {
+		$parts[] = sprintf( '%s=%d', $context, $count );
+	}
+	return implode( '; ', $parts );
+}
+
+/**
+ * @param array<string, mixed> $contexts
+ */
+function wpcas_report_contexts_full( array $contexts ): string {
+	$lines = array();
+	foreach ( array( 'started', 'completed', 'other' ) as $bucket ) {
+		$entries = $contexts[ $bucket ] ?? array();
+		if ( array() === $entries ) {
+			$lines[] = "  - {$bucket}: (none)";
+			continue;
+		}
+		$parts = array();
+		foreach ( $entries as $key => $count ) {
+			$parts[] = sprintf( '%s=%d', $key, $count );
+		}
+		$lines[] = "  - {$bucket}: " . implode( ', ', $parts );
+	}
+	return implode( "\n", $lines );
+}
+
+function wpcas_report_md_escape( string $value ): string {
+	return str_replace( '|', '\\|', $value );
+}
+
+// --- Build the document ---------------------------------------------------
+
+$md   = array();
+$md[] = '# Full scenario matrix report';
+$md[] = '';
+$md[] = 'Generated by `bin/generate-report` from committed records in `results/matrix/' . $run_timestamp . '/` -- run `bin/measure-matrix` then `bin/generate-report` to reproduce every figure below from a fresh run.';
+$md[] = '';
+$md[] = sprintf(
+	'Source run: `%s` -- %d scenario record(s), %d negative result(s)%s.',
+	$run_timestamp,
+	count( $scenarios ),
+	count( $negatives ),
+	( null !== $occupancy ? ', 1 occupancy measurement' : '' ) . ( null !== $unhook_timing ? ', 1 unhook-timing measurement' : '' )
+);
+$md[] = '';
+
+// --- Scenario table ---------------------------------------------------
+
+$md[] = '## Scenario table';
+$md[] = '';
+$md[] = 'Every row below is read directly from its own committed record under `results/matrix/' . $run_timestamp . '/<scenario>.json` -- the `Preflight` column is that exact run\'s preflight snapshot (captured *before* the control ran), so a reader can verify the empty-queue, missing-callback, stale-claim, and leftover-transient traps were excluded for that specific row, not take it on trust.';
+$md[] = '';
+$md[] = '| Scenario | Armed sections | DISABLE_WP_CRON | Drained | Fully drained | Execution contexts (started) | Elapsed (s) | HTTP status | Preflight snapshot |';
+$md[] = '|---|---|---|---|---|---|---|---|---|';
+
+foreach ( $scenarios as $scenario ) {
+	$context       = $scenario['matrix_context'] ?? array();
+	$armed         = wpcas_report_armed_label( $context['armed_sections'] ?? array() );
+	$disable_cron  = array_key_exists( 'disable_wp_cron', $context ) ? ( $context['disable_wp_cron'] ? 'true' : 'false' ) : 'n/a';
+	$outcome       = $scenario['outcome'] ?? array();
+	$contexts_desc = wpcas_report_contexts_compact( $scenario['execution_contexts'] ?? array() );
+	$elapsed       = array_key_exists( 'elapsed_seconds', $scenario ) ? sprintf( '%.3f', (float) $scenario['elapsed_seconds'] ) : 'n/a';
+	$http_status   = null === ( $scenario['http_status'] ?? null ) ? 'n/a' : (string) $scenario['http_status'];
+	$preflight     = wpcas_report_preflight_compact( $scenario['preflight'] ?? null );
+
+	$md[] = sprintf(
+		'| `%s` | %s | %s | %d | %s | %s | %s | %s | %s |',
+		wpcas_report_md_escape( (string) ( $scenario['control'] ?? $scenario['_file'] ) ),
+		wpcas_report_md_escape( $armed ),
+		$disable_cron,
+		(int) ( $outcome['drained'] ?? 0 ),
+		( $outcome['fully_drained'] ?? false ) ? 'true' : 'false',
+		wpcas_report_md_escape( $contexts_desc ),
+		$elapsed,
+		$http_status,
+		wpcas_report_md_escape( $preflight )
+	);
+}
+$md[] = '';
+
+// --- Per-entry-point execution contexts (full) ---------------------------
+
+$md[] = '## Execution contexts by entry point';
+$md[] = '';
+$md[] = 'Full started/completed/other breakdown per scenario, straight from each record\'s own `execution_contexts` field (see `docker/wp-cli/lib/result-record.php`) -- the scenario table above shows only the `started` counts for scanability.';
+$md[] = '';
+foreach ( $scenarios as $scenario ) {
+	$md[] = sprintf( '- `%s`:', $scenario['control'] ?? $scenario['_file'] );
+	$md[] = wpcas_report_contexts_full( $scenario['execution_contexts'] ?? array() );
+}
+$md[] = '';
+
+// --- Unhook timing table (issue #8) --------------------------------------
+
+$md[] = '## Unhook timing table (issue #8)';
+$md[] = '';
+if ( null !== $unhook_timing && 'measured' === ( $unhook_timing['result_kind'] ?? null ) ) {
+	$md[] = sprintf( 'Action Scheduler version measured (this run): **%s**.', $unhook_timing['action_scheduler_version'] ?? 'unknown' );
+	$md[] = '';
+	// This table is a deliberate composite, not a single request's output --
+	// see bin/measure-unhook-timing's own docblock. Every row except
+	// `init:101` comes from request 1 (guard fully disarmed); `init:101`
+	// comes from request 2 (section 4 armed) instead, because that row is
+	// specifically about what the guard removes. Called out here, right
+	// above the table, because the raw JSON blocks printed below it show
+	// request 1's own `init:101` as "attached, priority 10" -- an
+	// apparent contradiction unless a reader already knows which row came
+	// from which request.
+	$md[] = '_Composite table: every row is from request 1 (guard disarmed) except `init:101`, which is from request 2 (section 4 armed) -- the one row this measurement needs the guard armed to observe. See the raw JSON for both requests below; request 1\'s own `init:101` reads "attached" there because the guard was not armed for that request._';
+	$md[] = '';
+	$md[] = trim( (string) ( $unhook_timing['table_markdown'] ?? '(table not captured)' ) );
+	$md[] = '';
+	$md[] = 'Raw JSON, request 1 (guard disarmed):';
+	$md[] = '';
+	$md[] = '```json';
+	$md[] = (string) json_encode( $unhook_timing['request_1_guard_disarmed'] ?? null, JSON_PRETTY_PRINT );
+	$md[] = '```';
+	$md[] = '';
+	$md[] = 'Raw JSON, request 2 (section 4 armed):';
+	$md[] = '';
+	$md[] = '```json';
+	$md[] = (string) json_encode( $unhook_timing['request_2_section_4_armed'] ?? null, JSON_PRETTY_PRINT );
+	$md[] = '```';
+} else {
+	$md[] = 'NOT AVAILABLE for this run -- see `## Not verified` below.';
+}
+$md[] = '';
+
+// --- Worker occupancy (issue #9) ------------------------------------------
+
+$md[] = '## Worker occupancy during a drain (issue #9)';
+$md[] = '';
+if ( null !== $occupancy ) {
+	$trigger = $occupancy['trigger'] ?? array();
+	$md[]    = sprintf( '- Result kind: `%s`', $occupancy['result_kind'] ?? 'unknown' );
+	$md[]    = sprintf( '- Server model: %s', $occupancy['server_model'] ?? 'unknown' );
+	$md[]    = sprintf( '- Workers total: %d', (int) ( $occupancy['workers_total'] ?? 0 ) );
+	$md[]    = sprintf(
+		'- Workers occupied by drain: %d (%s)',
+		(int) ( $occupancy['workers_occupied_by_drain'] ?? 0 ),
+		$occupancy['workers_occupied_by_drain_method'] ?? 'unknown method'
+	);
+	$md[] = sprintf(
+		'- Trigger request: %s, %.3fs, is_fast=%s',
+		(string) ( $trigger['http_code'] ?? 'n/a' ),
+		(float) ( $trigger['response_seconds'] ?? 0.0 ),
+		( $trigger['is_fast'] ?? false ) ? 'true' : 'false'
+	);
+	$md[] = sprintf(
+		'- Drain duration: %s -- completed=%s, observed in flight=%s',
+		null === ( $occupancy['drain_duration_seconds'] ?? null ) ? 'n/a' : sprintf( '%.3fs', (float) $occupancy['drain_duration_seconds'] ),
+		( $occupancy['drain_completed'] ?? false ) ? 'true' : 'false',
+		( $occupancy['drain_observed_in_flight'] ?? false ) ? 'true' : 'false'
+	);
+	$md[] = sprintf( '- Degradation observed (>25%% at highest tested concurrency): %s', ( $occupancy['degradation_observed'] ?? false ) ? 'true' : 'false' );
+	$md[] = '';
+	$md[] = '| Concurrency | Baseline avg (s) | During-drain avg (s) | Delta (s) | Delta (%) |';
+	$md[] = '|---|---|---|---|---|';
+	foreach ( (array) ( $occupancy['degradation_by_concurrency'] ?? array() ) as $concurrency => $row ) {
+		$md[] = sprintf(
+			'| %s | %.4f | %.4f | %.4f | %s |',
+			(string) $concurrency,
+			(float) ( $row['baseline_avg_seconds'] ?? 0.0 ),
+			(float) ( $row['during_drain_avg_seconds'] ?? 0.0 ),
+			(float) ( $row['delta_seconds'] ?? 0.0 ),
+			null === ( $row['delta_pct'] ?? null ) ? 'n/a' : sprintf( '%.1f%%', 100 * (float) $row['delta_pct'] )
+		);
+	}
+	if ( array() !== (array) ( $occupancy['notes'] ?? array() ) ) {
+		$md[] = '';
+		$md[] = 'Notes (from the record itself):';
+		foreach ( (array) $occupancy['notes'] as $note ) {
+			$md[] = '- ' . $note;
+		}
+	}
+} else {
+	$md[] = 'NOT AVAILABLE for this run -- see `## Not verified` below.';
+}
+$md[] = '';
+
+// --- Not verified ----------------------------------------------------------
+
+$md[] = '## Not verified';
+$md[] = '';
+if ( array() === $negatives && array() === $unparseable ) {
+	$md[] = 'Every scenario in this run reproduced and emitted a positive result record. Nothing to report here.';
+} else {
+	foreach ( $negatives as $negative ) {
+		$md[] = sprintf( '### `%s`', $negative['control'] ?? $negative['_file'] ?? 'unknown' );
+		$md[] = '';
+		$md[] = sprintf( '- Reason: `%s`', $negative['reason'] ?? 'unknown' );
+		if ( array_key_exists( 'exit_code', $negative ) ) {
+			$md[] = sprintf( '- Exit code: %d', (int) $negative['exit_code'] );
+		}
+		if ( array_key_exists( 'matrix_context', $negative ) ) {
+			$armed = wpcas_report_armed_label( $negative['matrix_context']['armed_sections'] ?? array() );
+			$md[]  = sprintf( '- Armed sections: %s', $armed );
+		}
+		if ( null !== ( $negative['preflight'] ?? null ) ) {
+			$md[] = sprintf( '- Preflight snapshot: %s', wpcas_report_preflight_compact( $negative['preflight'] ) );
+		}
+		if ( array_key_exists( 'notes', $negative ) ) {
+			foreach ( (array) $negative['notes'] as $note ) {
+				$md[] = '- Note: ' . $note;
+			}
+		}
+		$md[] = sprintf( '- Full record: `results/matrix/%s/%s`', $run_timestamp, $negative['_file'] ?? '(unknown)' );
+		$md[] = '';
+	}
+	foreach ( $unparseable as $file ) {
+		$md[] = sprintf( '- `%s`: file present but not parseable as JSON -- see `results/matrix/%s/%s` directly.', $file, $run_timestamp, $file );
+	}
+}
+$md[] = '';
+
+$content = implode( "\n", $md );
+
+$output_dir = dirname( $output_file );
+if ( ! is_dir( $output_dir ) && ! mkdir( $output_dir, 0777, true ) && ! is_dir( $output_dir ) ) {
+	fwrite( STDERR, "generate-report: could not create output directory '{$output_dir}'.\n" );
+	exit( 1 );
+}
+
+file_put_contents( $output_file, $content );
+
+fwrite( STDERR, "Report written to {$output_file} (source run: {$run_dir}).\n" );
+echo $output_file, "\n";

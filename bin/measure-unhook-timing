@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+#
+# Measure has_action( ActionScheduler_QueueRunner::WP_CRON_HOOK ) at six
+# lifecycle stages inside a real web request, for issue #8.
+#
+# Two requests are made, each against the running stack started by
+# `bin/stack up`:
+#
+#   1. Guard disarmed (all four sections). Reports the five stages that
+#      are NOT affected by the unhook guard (#3 section 4): plugins_loaded,
+#      early init, action_scheduler_init, immediately-before-guard-priority,
+#      and wp_loaded. Observing these without the guard armed is what issue
+#      #8's "does not depend on arming beyond what it needs to observe"
+#      acceptance criterion asks for -- arming the guard here would fold a
+#      second effect (removal) into rows that aren't about removal.
+#   2. Section 4 (the unhook guard) armed, nothing else. Reports the
+#      immediately-after-guard-priority stage, which is the one row this
+#      measurement actually needs the guard armed to observe.
+#
+# The probe itself lives in docker/mu-plugins-available/90-unhook-timing-probe.php
+# and is copied into docker/mu-plugins/ only for the duration of this
+# script, then removed again -- it is not one of bin/guard's four sections
+# and is not meant to run on every request.
+#
+# Usage:
+#   bin/measure-unhook-timing            # assumes `bin/stack up` already ran
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROBE_SRC="$REPO_ROOT/docker/mu-plugins-available/90-unhook-timing-probe.php"
+PROBE_DEST="$REPO_ROOT/docker/mu-plugins/90-unhook-timing-probe.php"
+
+# Port derivation copy-pasted from bin/stack (not sourced, to keep this
+# script runnable standalone) -- if that formula ever changes, this one
+# must change with it, or this script will probe the wrong port.
+HASH="$(printf '%s' "$REPO_ROOT" | shasum -a 256 | cut -c1-8)"
+PORT=$(( 8500 + (16#$HASH % 400) ))
+BASE_URL="http://localhost:${PORT}/"
+
+cleanup() {
+    rm -f "$PROBE_DEST"
+    "$REPO_ROOT/bin/guard" arm >/dev/null
+}
+trap cleanup EXIT
+
+if [ ! -f "$PROBE_SRC" ]; then
+    echo "error: probe file not found at $PROBE_SRC" >&2
+    exit 1
+fi
+
+echo "Waiting for $BASE_URL to answer..." >&2
+for _ in $(seq 1 30); do
+    if curl -fsS -o /dev/null "$BASE_URL"; then
+        break
+    fi
+    sleep 1
+done
+
+cp "$PROBE_SRC" "$PROBE_DEST"
+
+echo "--- Request 1: guard disarmed (natural attachment state) ---" >&2
+"$REPO_ROOT/bin/guard" arm >&2
+REQUEST_1_JSON="$(curl -fsS "${BASE_URL}?wpcas_probe=1")"
+echo "$REQUEST_1_JSON" >&2
+
+echo "--- Request 2: section 4 (unhook guard) armed ---" >&2
+"$REPO_ROOT/bin/guard" arm 4 >&2
+REQUEST_2_JSON="$(curl -fsS "${BASE_URL}?wpcas_probe=1")"
+echo "$REQUEST_2_JSON" >&2
+
+python3 - "$REQUEST_1_JSON" "$REQUEST_2_JSON" <<'PYEOF'
+import json
+import sys
+
+req1 = json.loads(sys.argv[1])
+req2 = json.loads(sys.argv[2])
+
+as_version = req1.get("action_scheduler_version", "unknown")
+
+rows = [
+    ("plugins_loaded:10", req1.get("plugins_loaded:10", "MISSING")),
+    ("init:1", req1.get("init:1", "MISSING")),
+    ("action_scheduler_init:10", req1.get("action_scheduler_init:10", "MISSING")),
+    ("init:99", req1.get("init:99", "MISSING")),
+    ("init:101", req2.get("init:101", "MISSING")),
+    ("wp_loaded:10", req1.get("wp_loaded:10", "MISSING")),
+]
+
+print()
+print(f"Action Scheduler version measured: {as_version}")
+print()
+print("| Stage | has_action(WP_CRON_HOOK) |")
+print("|---|---|")
+for stage, value in rows:
+    print(f"| `{stage}` | {value} |")
+PYEOF
