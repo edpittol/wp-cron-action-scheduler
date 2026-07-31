@@ -13,21 +13,44 @@
 #   bin/stack down [args...]   # stop and remove containers
 #   bin/stack shell            # interactive shell in the wordpress container
 #   bin/stack exec <cmd>       # run <cmd> in the wordpress container (e.g. wp-cli)
-#   bin/stack seed [count] [due-now]    # seed <count> (default 50) pending probe actions
-#   bin/stack reset [count] [due-now]   # clear transient/claims/leftovers, then re-seed
+#   bin/stack seed [count] [--due-now]  # seed <count> (default 50) pending probe actions
+#   bin/stack reset [count] [--due-now] # clear transient/claims/leftovers, then re-seed
 #   bin/stack preflight                 # assert preconditions, emit a JSON snapshot
 #   bin/stack measure <control>         # run a CLI control, write a result record
 #                                        #   <control>: wp-cron | action-scheduler
 #   bin/stack measure-http <label>      # GET wp-cron.php, write a result record
+#   bin/stack measure-async-ajax <scenario-label>
+#                                        # POST an unauthenticated request to
+#                                        # Action Scheduler's async-request ajax
+#                                        # action (issue #6), write a result record
+#   bin/stack measure-admin-page-load <scenario-label>
+#                                        # authenticated wp-admin page load
+#                                        # (issue #7), write a result record
+#   bin/stack measure-manual-run <scenario-label>
+#                                        # authenticated manual "Run" click from
+#                                        # the Scheduled Actions admin screen
+#                                        # (issue #7), write a result record
 #   bin/stack set-disable-wp-cron <true|false>
 #                                        # flip the DISABLE_WP_CRON constant at
 #                                        # runtime (issue #5) -- recreates the
 #                                        # container with a new env value, no
 #                                        # image rebuild
+#   bin/stack occupancy [count]         # measure worker occupancy during a drain (issue #9)
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 COMPOSE_FILE="$REPO_ROOT/docker-compose.yml"
+
+# Issue #10: every `measure*` subcommand below writes its result record
+# under this directory. Defaults to the top-level results/ directory
+# (unchanged behaviour for every existing caller), but bin/measure-matrix
+# overrides it to results/matrix/ so a full matrix run's own fresh records
+# land in one dedicated place, never mixed in with the individual example
+# records #5/#6/#7 committed directly under results/ -- see bin/measure-matrix
+# and bin/generate-report's own docblocks, and issue #10's `## Decisions`,
+# for why that separation matters: the report renders results/matrix/
+# exclusively.
+RESULTS_DIR="${WPCAS_RESULTS_DIR:-$REPO_ROOT/results}"
 
 # Hash the checkout path (not the branch, not the repo name) so every
 # separate working copy on this machine gets its own namespace.
@@ -55,6 +78,161 @@ export WPCAS_DISABLE_WP_CRON="${WPCAS_DISABLE_WP_CRON:-true}"
 
 compose() {
     docker compose -f "$COMPOSE_FILE" "$@"
+}
+
+# --- issue #9: worker-occupancy measurement -------------------------------
+#
+# Measures worker occupancy during a real, in-flight drain: seeds due-now
+# actions, triggers Action Scheduler's async drain via an admin-context HTTP
+# hit (which returns almost instantly itself -- see occupancy_trigger()),
+# then fires concurrent GET / requests against this stack's own published
+# port at increasing concurrency levels while polling the drain's own
+# pending count out-of-band (via wp-cli, never over HTTP, so polling itself
+# never consumes one of the php-cli-server workers being measured). Prints
+# the finished JSON record from docker/wp-cli/lib/occupancy-assertions.php
+# (via bin/occupancy-report.php), which names the server model explicitly
+# so the figures can never be misread as PHP-FPM.
+#
+# Concurrency levels deliberately bracket the worker pool: below, at, and
+# (twice) above PHP_CLI_SERVER_WORKERS, so a run can show latency staying
+# flat under the free-worker count and degrading once concurrency exceeds
+# it -- see the PR's "Decisions" for the run that validated this bracket.
+WPCAS_OCCUPANCY_CONCURRENCY_LEVELS=(3 6 12 24)
+WPCAS_OCCUPANCY_DRAIN_TIMEOUT_SECONDS=30
+
+# $1: concurrency. Fires that many concurrent GET / requests against this
+# stack's own front end from the host (real external HTTP clients, not
+# requests made from inside the container), and prints a JSON array of
+# their %{time_total} response times in seconds.
+occupancy_curl_wave() {
+    local concurrency="$1"
+    local tmp
+    tmp="$(mktemp -d)"
+    local pids=()
+    local i
+    for i in $(seq 1 "$concurrency"); do
+        curl -s -o /dev/null -w '%{time_total}\n' "http://localhost:${STACK_PORT}/" > "$tmp/$i.time" &
+        pids+=($!)
+    done
+    for i in "${pids[@]}"; do wait "$i"; done
+    cat "$tmp"/*.time | jq -R -s 'split("\n") | map(select(length > 0) | tonumber)'
+    rm -rf "$tmp"
+}
+
+# Polled via a plain wp-cli process (CLI SAPI), not over HTTP -- so polling
+# never competes with the front-end requests for a php-cli-server worker.
+occupancy_pending_count() {
+    compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/pending-count.php --allow-root 2>/dev/null | tail -1
+}
+
+# Fires the single request that starts the drain, timed and status-coded in
+# one curl call so the trigger is only ever requested once. Targets
+# wp-admin/index.php specifically: Action Scheduler's async dispatch
+# (ActionScheduler_QueueRunner::maybe_dispatch_async_request()) only fires
+# from an is_admin() request context, and WordPress only sets that context
+# once an actual wp-admin/*.php file is requested and bootstrapped -- an
+# unauthenticated hit still bootstraps far enough to dispatch before
+# redirecting to wp-login.php, so no admin credentials are needed here.
+# Empirically confirmed against this stack: hitting the bare front end (`/`
+# or `/wp-admin/` without `index.php`, which this repo's router.php falls
+# through to the front controller for) never dispatches a drain at all.
+occupancy_trigger() {
+    curl -s -o /dev/null -w '%{http_code} %{time_total}' "http://localhost:${STACK_PORT}/wp-admin/index.php"
+}
+
+run_occupancy() {
+    local count="${1:-50}"
+
+    # Both sub-commands' own stdout (WP_CLI::log()/success() output, and
+    # preflight's own JSON snapshot) is redirected to stderr here, not
+    # suppressed: `bin/stack occupancy`'s stdout is reserved for exactly one
+    # JSON value, the final record, so it stays pipeable/parseable (e.g.
+    # `bin/stack occupancy 50 > record.json`) the same way `preflight` alone
+    # already is.
+    echo "== occupancy: reset ${count} (due-now) ==" >&2
+    compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/reset.php "$count" due-now --allow-root >&2
+
+    echo "== occupancy: preflight ==" >&2
+    compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/preflight.php --allow-root >&2
+
+    local workers_total
+    workers_total="$(compose exec -T wordpress printenv PHP_CLI_SERVER_WORKERS 2>/dev/null | tr -d '\r\n')"
+    [ -n "$workers_total" ] || workers_total=1
+
+    echo "== occupancy: baseline waves (no drain in flight, workers_total=${workers_total}) ==" >&2
+    local baseline_waves_file drain_waves_file drain_samples_file facts_file
+    baseline_waves_file="$(mktemp)"; : > "$baseline_waves_file"
+    drain_waves_file="$(mktemp)"; : > "$drain_waves_file"
+    drain_samples_file="$(mktemp)"; : > "$drain_samples_file"
+    facts_file="$(mktemp)"
+
+    local c times
+    for c in "${WPCAS_OCCUPANCY_CONCURRENCY_LEVELS[@]}"; do
+        times="$(occupancy_curl_wave "$c")"
+        jq -nc --argjson concurrency "$c" --argjson times "$times" \
+            '{concurrency: $concurrency, response_times_seconds: $times}' >> "$baseline_waves_file"
+        echo "  baseline concurrency=${c}: ${times}" >&2
+    done
+
+    echo "== occupancy: trigger ==" >&2
+    local trigger_output trigger_code trigger_time trigger_epoch
+    trigger_output="$(occupancy_trigger)"
+    trigger_code="$(echo "$trigger_output" | awk '{print $1}')"
+    trigger_time="$(echo "$trigger_output" | awk '{print $2}')"
+    trigger_epoch="$(date +%s.%N)"
+    echo "  trigger_response_seconds=${trigger_time} http_code=${trigger_code}" >&2
+
+    echo "== occupancy: during-drain waves ==" >&2
+    local level_i=0 now offset pending
+    while true; do
+        now="$(date +%s.%N)"
+        offset="$(echo "$now - $trigger_epoch" | bc)"
+        pending="$(occupancy_pending_count)"
+        jq -nc --argjson t "$offset" --argjson p "$pending" \
+            '{t_offset_seconds: $t, pending: $p}' >> "$drain_samples_file"
+
+        if [ "$pending" = "0" ]; then
+            echo "  t_offset=${offset}s pending=0 -- drain complete" >&2
+            break
+        fi
+
+        if (( $(echo "$offset > $WPCAS_OCCUPANCY_DRAIN_TIMEOUT_SECONDS" | bc -l) )); then
+            echo "  t_offset=${offset}s pending=${pending} -- TIMEOUT (${WPCAS_OCCUPANCY_DRAIN_TIMEOUT_SECONDS}s), aborting wave loop" >&2
+            break
+        fi
+
+        c="${WPCAS_OCCUPANCY_CONCURRENCY_LEVELS[$(( level_i % ${#WPCAS_OCCUPANCY_CONCURRENCY_LEVELS[@]} ))]}"
+        level_i=$(( level_i + 1 ))
+        times="$(occupancy_curl_wave "$c")"
+        jq -nc --argjson t "$offset" --argjson concurrency "$c" --argjson times "$times" \
+            '{t_offset_seconds: $t, concurrency: $concurrency, response_times_seconds: $times}' >> "$drain_waves_file"
+        echo "  t_offset=${offset}s pending=${pending} concurrency=${c} times=${times}" >&2
+    done
+
+    jq -n \
+        --arg server_model "php-cli-server" \
+        --argjson workers_total "$workers_total" \
+        --arg trigger_url "http://localhost:${STACK_PORT}/wp-admin/index.php" \
+        --argjson trigger_response_seconds "$trigger_time" \
+        --argjson trigger_http_code "$trigger_code" \
+        --argjson pending_before "$count" \
+        --argjson timeout_seconds "$WPCAS_OCCUPANCY_DRAIN_TIMEOUT_SECONDS" \
+        --slurpfile samples "$drain_samples_file" \
+        --slurpfile baseline_waves "$baseline_waves_file" \
+        --slurpfile drain_waves "$drain_waves_file" \
+        '{
+            server_model: $server_model,
+            workers_total: $workers_total,
+            trigger: {url: $trigger_url, response_seconds: $trigger_response_seconds, http_code: $trigger_http_code},
+            drain: {pending_before: $pending_before, timeout_seconds: $timeout_seconds, samples: $samples},
+            baseline_waves: $baseline_waves,
+            drain_waves: $drain_waves
+        }' > "$facts_file"
+
+    echo "== occupancy: record ==" >&2
+    php "$REPO_ROOT/bin/occupancy-report.php" < "$facts_file"
+
+    rm -f "$baseline_waves_file" "$drain_waves_file" "$drain_samples_file" "$facts_file"
 }
 
 cmd="${1:-}"
@@ -85,10 +263,16 @@ case "$cmd" in
         # no matter where it appears. --use-include runs the file via a
         # normal PHP `include` instead, same as any other required file in
         # this codebase, so strict_types works like it does everywhere else.
-        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/seed.php "$@" --allow-root
+        #
+        # `--due-now` (issue #9) is translated to the positional `due-now`
+        # token here rather than passed through as a flag: `wp eval-file`
+        # validates assoc-args strictly against its own command signature
+        # and rejects any `--flag` it doesn't itself recognize -- see
+        # seed.php's docstring.
+        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/seed.php "${@/--due-now/due-now}" --allow-root
         ;;
     reset)
-        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/reset.php "$@" --allow-root
+        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/reset.php "${@/--due-now/due-now}" --allow-root
         ;;
     preflight)
         compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/preflight.php "$@" --allow-root
@@ -121,8 +305,8 @@ case "$cmd" in
             usage_label="measure-http <label>"
         fi
         control="${1:?Usage: $(basename "$0") ${usage_label}}"
-        mkdir -p "$REPO_ROOT/results"
-        outfile="$REPO_ROOT/results/$(date -u +%Y%m%dT%H%M%SZ)-${control}.json"
+        mkdir -p "$RESULTS_DIR"
+        outfile="$RESULTS_DIR/$(date -u +%Y%m%dT%H%M%SZ)-${control}.json"
         tmpfile="$(mktemp "${outfile}.XXXXXX.tmp")"
         rc=0
         compose exec -T wordpress wp eval-file --use-include "$script" "$control" --allow-root > "$tmpfile" || rc=$?
@@ -134,6 +318,69 @@ case "$cmd" in
             rm -f "$tmpfile"
             echo "" >&2
             echo "$(basename "$script") exited ${rc} -- no result record written (see the diagnostics above, e.g. a failed preflight)." >&2
+            exit "$rc"
+        fi
+        ;;
+    measure-async-ajax)
+        # Same file/temp-file/mv discipline as `measure` above, for issue
+        # #6's HTTP-vector script (measure-async-ajax.php) instead of a CLI
+        # control -- see that file's own docblock.
+        scenario="${1:?Usage: $(basename "$0") measure-async-ajax <scenario-label>}"
+        mkdir -p "$RESULTS_DIR"
+        outfile="$RESULTS_DIR/$(date -u +%Y%m%dT%H%M%SZ)-async-ajax-${scenario}.json"
+        tmpfile="$(mktemp "${outfile}.XXXXXX.tmp")"
+        rc=0
+        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/measure-async-ajax.php "$scenario" --allow-root > "$tmpfile" || rc=$?
+        if [ "$rc" -eq 0 ]; then
+            mv "$tmpfile" "$outfile"
+            echo "" >&2
+            echo "Result record written to ${outfile}" >&2
+        else
+            rm -f "$tmpfile"
+            echo "" >&2
+            echo "measure-async-ajax.php exited ${rc} -- no result record written (see the diagnostics above, e.g. a failed preflight or canary-writability self-test)." >&2
+            exit "$rc"
+        fi
+        ;;
+    measure-admin-page-load)
+        # Same file/temp-file/mv discipline as `measure` above, for issue
+        # #7's authenticated-admin-page-load script instead of a CLI
+        # control -- see that file's own docblock.
+        scenario="${1:?Usage: $(basename "$0") measure-admin-page-load <scenario-label>}"
+        mkdir -p "$RESULTS_DIR"
+        outfile="$RESULTS_DIR/$(date -u +%Y%m%dT%H%M%SZ)-admin-page-load-${scenario}.json"
+        tmpfile="$(mktemp "${outfile}.XXXXXX.tmp")"
+        rc=0
+        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/measure-admin-page-load.php "$scenario" --allow-root > "$tmpfile" || rc=$?
+        if [ "$rc" -eq 0 ]; then
+            mv "$tmpfile" "$outfile"
+            echo "" >&2
+            echo "Result record written to ${outfile}" >&2
+        else
+            rm -f "$tmpfile"
+            echo "" >&2
+            echo "measure-admin-page-load.php exited ${rc} -- no result record written (see the diagnostics above, e.g. a failed preflight or canary-writability self-test)." >&2
+            exit "$rc"
+        fi
+        ;;
+    measure-manual-run)
+        # Same file/temp-file/mv discipline as `measure` above, for issue
+        # #7's authenticated-manual-run script instead of a CLI control --
+        # see that file's own docblock.
+        scenario="${1:?Usage: $(basename "$0") measure-manual-run <scenario-label>}"
+        mkdir -p "$RESULTS_DIR"
+        outfile="$RESULTS_DIR/$(date -u +%Y%m%dT%H%M%SZ)-manual-run-${scenario}.json"
+        tmpfile="$(mktemp "${outfile}.XXXXXX.tmp")"
+        rc=0
+        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/measure-manual-run.php "$scenario" --allow-root > "$tmpfile" || rc=$?
+        if [ "$rc" -eq 0 ]; then
+            mv "$tmpfile" "$outfile"
+            echo "" >&2
+            echo "Result record written to ${outfile}" >&2
+        else
+            rm -f "$tmpfile"
+            echo "" >&2
+            echo "measure-manual-run.php exited ${rc} -- no result record written (see the diagnostics above, e.g. a failed preflight or canary-writability self-test)." >&2
             exit "$rc"
         fi
         ;;
@@ -155,21 +402,35 @@ case "$cmd" in
         WPCAS_DISABLE_WP_CRON="$value" compose up -d wordpress
         echo "DISABLE_WP_CRON is now ${value} (container recreated, image not rebuilt)." >&2
         ;;
+    occupancy)
+        # issue #9: measure worker occupancy during a drain. See the
+        # run_occupancy() function above for the full scenario.
+        run_occupancy "$@"
+        ;;
     *)
-        echo "Usage: $(basename "$0") {up|down|shell|exec|seed|reset|preflight|measure|measure-http|set-disable-wp-cron} [args...]" >&2
+        echo "Usage: $(basename "$0") {up|down|shell|exec|seed|reset|preflight|measure|measure-http|measure-async-ajax|measure-admin-page-load|measure-manual-run|set-disable-wp-cron|occupancy} [args...]" >&2
         echo "  up                    build and start the stack" >&2
         echo "  down                  stop and remove the stack" >&2
         echo "  shell                 open a shell in the wordpress container" >&2
         echo "  exec <cmd>            run <cmd> in the wordpress container, e.g.:" >&2
         echo "                          bin/stack exec wp core is-installed" >&2
-        echo "  seed [count] [due-now]  seed <count> (default 50) pending probe actions" >&2
-        echo "  reset [count] [due-now] clear transient/claims/leftovers, then re-seed" >&2
+        echo "  seed [count] [--due-now]   seed <count> (default 50) pending probe actions" >&2
+        echo "  reset [count] [--due-now]  clear transient/claims/leftovers, then re-seed" >&2
         echo "  preflight             assert preconditions, emit a JSON snapshot" >&2
         echo "  measure <control>     run a CLI control, write a result record;" >&2
         echo "                          <control>: wp-cron | action-scheduler" >&2
         echo "  measure-http <label>  GET wp-cron.php unauthenticated, write a result record" >&2
+        echo "  measure-async-ajax <scenario-label>" >&2
+        echo "                        POST an unauthenticated request to the async-request" >&2
+        echo "                        ajax action, write a result record" >&2
+        echo "  measure-admin-page-load <scenario-label>" >&2
+        echo "                        authenticated wp-admin page load, write a result record" >&2
+        echo "  measure-manual-run <scenario-label>" >&2
+        echo "                        authenticated manual 'Run' click from the Scheduled" >&2
+        echo "                        Actions admin screen, write a result record" >&2
         echo "  set-disable-wp-cron <true|false>" >&2
         echo "                        flip DISABLE_WP_CRON at runtime, no rebuild" >&2
+        echo "  occupancy [count]     measure worker occupancy during a drain (issue #9)" >&2
         exit 1
         ;;
 esac
