@@ -1,0 +1,327 @@
+{
+  "schema_version": 3,
+  "control": "admin-page-load:admin-page-load-unarmed",
+  "command": null,
+  "http_status": 200,
+  "started_at": "2026-07-29T17:52:04+00:00",
+  "finished_at": "2026-07-29T17:52:18+00:00",
+  "elapsed_seconds": 13.532284021377563,
+  "preflight": {
+    "ok": true,
+    "pending_count": 50,
+    "callback_attached": true,
+    "cron_in_progress": false,
+    "claims_count": 0,
+    "failures": []
+  },
+  "cron_in_progress_after": false,
+  "outcome": {
+    "pending_before": 50,
+    "pending_after": 0,
+    "drained": 50,
+    "fully_drained": true,
+    "probe_executions_observed": 50
+  },
+  "execution_contexts": {
+    "started": {
+      "Async Request": 50
+    },
+    "completed": {
+      "Async Request": 50
+    },
+    "other": {
+      "action created": 50
+    }
+  },
+  "probe_records": [
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347526.554324
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347526.77312
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347526.991398
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347527.215687
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347527.43538
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347527.745068
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347527.967268
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347528.186885
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347528.409414
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347528.625502
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347528.845203
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347529.061902
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347529.28829
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347529.510893
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347529.728938
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347529.94934
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347530.165667
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347530.386957
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347530.603978
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347530.824688
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347531.044235
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347531.267475
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347531.49126
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347531.709747
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347531.932069
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347532.151448
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347532.374765
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347532.599491
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347532.819408
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347533.044404
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347533.263645
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347533.48349
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347533.701665
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347533.917274
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347534.135345
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347534.356446
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347534.57892
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347534.796804
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347535.019257
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347535.237129
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347535.455708
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347535.67525
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347535.895387
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347536.116861
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347536.335684
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347536.554006
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347536.78061
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347536.997995
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347537.217846
+    },
+    {
+      "sapi": "cli-server",
+      "pid": 17,
+      "timestamp": 1785347537.443043
+    }
+  ],
+  "canary_line": null,
+  "canary_fired": false,
+  "vector": {
+    "name": "authenticated-admin-page-load",
+    "target_url": "http://localhost:8785/wp-admin/plugins.php",
+    "authenticated_as": "admin",
+    "authenticated_user_id": 1,
+    "auth_method": "wp_set_auth_cookie() minted in-process (docker/wp-cli/lib/admin-auth.php) -- no password read, stored, or transmitted",
+    "transport_error": null
+  },
+  "settle_poll": {
+    "waited_seconds": 12.4701669216156,
+    "settled": true,
+    "timed_out": false,
+    "progress_observed": true
+  },
+  "canary_log_writability": {
+    "path": "/var/log/wpcas/php-error.log",
+    "verified_writable": true
+  },
+  "dispatch_decision": {
+    "reached": true,
+    "allowed": true
+  },
+  "guard_state": {
+    "armed_guard_files": {
+      "10-block-http-cron.php": false,
+      "20-suppress-async-dispatch.php": false,
+      "30-log-non-cli-canary.php": false,
+      "40-unhook-queue-runner.php": false
+    },
+    "canary_action_hook_registered": false
+  },
+  "matrix_context": {
+    "scenario_label": "admin-page-load-unarmed",
+    "armed_sections": [],
+    "disable_wp_cron": true,
+    "seed_count": 50
+  }
+}

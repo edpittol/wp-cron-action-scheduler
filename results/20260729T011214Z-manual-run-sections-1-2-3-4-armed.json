@@ -1,0 +1,77 @@
+{
+    "schema_version": 2,
+    "control": "manual-run:sections-1-2-3-4-armed",
+    "command": null,
+    "http_status": 200,
+    "started_at": "2026-07-29T01:12:14+00:00",
+    "finished_at": "2026-07-29T01:12:15+00:00",
+    "elapsed_seconds": 0.4746270179748535,
+    "preflight": {
+        "ok": true,
+        "pending_count": 50,
+        "callback_attached": true,
+        "cron_in_progress": false,
+        "claims_count": 0,
+        "failures": []
+    },
+    "outcome": {
+        "pending_before": 50,
+        "pending_after": 49,
+        "drained": 1,
+        "fully_drained": false,
+        "probe_executions_observed": 1
+    },
+    "execution_contexts": {
+        "started": {
+            "Admin List Table": 1
+        },
+        "completed": {
+            "Admin List Table": 1
+        },
+        "other": {
+            "action created": 50
+        }
+    },
+    "probe_records": [
+        {
+            "sapi": "cli-server",
+            "pid": 12,
+            "timestamp": 1785287535.120432
+        }
+    ],
+    "canary_line": null,
+    "canary_fired": false,
+    "vector": {
+        "name": "authenticated-manual-run-scheduled-actions-admin-screen",
+        "target_url": "http://localhost:8832/wp-admin/tools.php?page=action-scheduler&row_action=run&row_id=507&nonce=47a4cf9984",
+        "target_action_id": "507",
+        "authenticated_as": "admin",
+        "authenticated_user_id": 1,
+        "auth_method": "wp_set_auth_cookie() minted in-process (docker/wp-cli/lib/admin-auth.php) -- no password read, stored, or transmitted",
+        "transport_error": null,
+        "canary_blind_spot": "This path calls ActionScheduler_QueueRunner::process_action() directly (classes/ActionScheduler_ListTable.php::process_row_action(), case 'run'), never calling run() and never firing 'action_scheduler_before_process_queue' -- the hook the section-3 canary guard listens on. A null canary_line here means the canary cannot see this entry point, not that nothing ran: outcome.drained above is the actual evidence this action executed."
+    },
+    "canary_log_writability": {
+        "path": "/var/log/wpcas/php-error.log",
+        "verified_writable": true
+    },
+    "settle_poll": {
+        "waited_seconds": 2.061264991760254,
+        "settled": true,
+        "timed_out": false,
+        "progress_observed": true
+    },
+    "guard_state": {
+        "armed_guard_files": {
+            "10-block-http-cron.php": true,
+            "20-suppress-async-dispatch.php": true,
+            "30-log-non-cli-canary.php": true,
+            "40-unhook-queue-runner.php": true
+        },
+        "canary_action_hook_registered": true
+    },
+    "dispatch_decision": {
+        "reached": true,
+        "allowed": false
+    }
+}

@@ -1,0 +1,66 @@
+{
+    "schema_version": 2,
+    "control": "action-scheduler",
+    "command": {
+        "argv": "wp action-scheduler run",
+        "exit_code": 0
+    },
+    "http_status": null,
+    "started_at": "2026-07-28T19:08:22+00:00",
+    "finished_at": "2026-07-28T19:08:24+00:00",
+    "elapsed_seconds": 1.3555419445037842,
+    "preflight": {
+        "ok": true,
+        "pending_count": 5,
+        "callback_attached": true,
+        "cron_in_progress": false,
+        "claims_count": 0,
+        "failures": []
+    },
+    "outcome": {
+        "pending_before": 5,
+        "pending_after": 0,
+        "drained": 5,
+        "fully_drained": true,
+        "probe_executions_observed": 5
+    },
+    "execution_contexts": {
+        "started": {
+            "WP CLI": 5
+        },
+        "completed": {
+            "WP CLI": 5
+        },
+        "other": {
+            "action created": 5
+        }
+    },
+    "probe_records": [
+        {
+            "sapi": "cli",
+            "pid": 60,
+            "timestamp": 1785265702.977896
+        },
+        {
+            "sapi": "cli",
+            "pid": 60,
+            "timestamp": 1785265703.209504
+        },
+        {
+            "sapi": "cli",
+            "pid": 60,
+            "timestamp": 1785265703.429945
+        },
+        {
+            "sapi": "cli",
+            "pid": 60,
+            "timestamp": 1785265703.653089
+        },
+        {
+            "sapi": "cli",
+            "pid": 60,
+            "timestamp": 1785265703.876044
+        }
+    ],
+    "canary_line": null
+}

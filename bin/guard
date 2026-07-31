@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+#
+# Arm/disarm the cron-runner-policy guard files.
+#
+# Each policy section is one file in docker/mu-plugins-available/. That
+# directory is never scanned by WordPress -- only docker/mu-plugins/ is
+# (it is bind-mounted onto wp-content/mu-plugins by docker-compose.yml).
+# "Arming" a section copies its file from -available/ into mu-plugins/;
+# "disarming" it removes that copy. There is no flag or constant inside
+# any guard file that changes its behaviour -- presence in mu-plugins/ is
+# the only toggle, so whatever runs during a scenario is exactly the code
+# that would ship.
+#
+# Because docker-compose.yml bind-mounts docker/mu-plugins/ straight into
+# the running container, arming takes effect on the next request with no
+# rebuild and no restart -- WordPress re-scans wp-content/mu-plugins/ on
+# every request.
+#
+# Usage:
+#   bin/guard arm [section...]   # activate exactly these sections (1-4);
+#                                 # no arguments disarms everything
+#   bin/guard status             # report which sections are armed, without
+#                                 # changing anything
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+AVAILABLE_DIR="$REPO_ROOT/docker/mu-plugins-available"
+ENABLED_DIR="$REPO_ROOT/docker/mu-plugins"
+
+# Section number -> guard file basename. The numbering here is the only
+# place that maps a ticket's "section N" language onto a filename.
+section_file() {
+    case "$1" in
+        1) echo "10-block-http-cron.php" ;;
+        2) echo "20-suppress-async-dispatch.php" ;;
+        3) echo "30-log-non-cli-canary.php" ;;
+        4) echo "40-unhook-queue-runner.php" ;;
+        *) return 1 ;;
+    esac
+}
+
+section_label() {
+    case "$1" in
+        1) echo "block HTTP requests to the cron entry point" ;;
+        2) echo "suppress Action Scheduler's async dispatch" ;;
+        3) echo "log a canary on any non-CLI queue run" ;;
+        4) echo "unhook the queue runner outside WP-CLI" ;;
+    esac
+}
+
+report_state() {
+    echo "guard state:"
+    for n in 1 2 3 4; do
+        file="$(section_file "$n")"
+        if [ -f "$ENABLED_DIR/$file" ]; then
+            state="armed"
+        else
+            state="disarmed"
+        fi
+        printf '  %d) %-8s %-45s [%s]\n' "$n" "$state" "$(section_label "$n")" "$file"
+    done
+}
+
+cmd="${1:-}"
+[ $# -gt 0 ] && shift || true
+
+case "$cmd" in
+    arm)
+        for requested in "$@"; do
+            if ! section_file "$requested" >/dev/null 2>&1; then
+                echo "error: unknown section '$requested' (valid: 1 2 3 4)" >&2
+                exit 1
+            fi
+        done
+
+        mkdir -p "$ENABLED_DIR"
+
+        for n in 1 2 3 4; do
+            file="$(section_file "$n")"
+            want=0
+            for requested in "$@"; do
+                [ "$requested" = "$n" ] && want=1
+            done
+
+            if [ "$want" = "1" ]; then
+                cp "$AVAILABLE_DIR/$file" "$ENABLED_DIR/$file"
+            else
+                rm -f "$ENABLED_DIR/$file"
+            fi
+        done
+
+        report_state
+        ;;
+    status)
+        report_state
+        ;;
+    *)
+        echo "Usage: $(basename "$0") {arm|status} [section...]" >&2
+        echo "  arm [1 2 3 4]   activate exactly these sections; no args disarms all" >&2
+        echo "  status          report the current armed/disarmed state" >&2
+        exit 1
+        ;;
+esac
