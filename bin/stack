@@ -11,8 +11,8 @@
 # Usage:
 #   bin/stack up               # build (if needed) and start, print the URL
 #   bin/stack down [args...]   # stop and remove containers
-#   bin/stack shell            # interactive shell in the wordpress container
-#   bin/stack exec <cmd>       # run <cmd> in the wordpress container (e.g. wp-cli)
+#   bin/stack shell            # interactive shell in the php-fpm container
+#   bin/stack exec <cmd>       # run <cmd> in the php-fpm container (e.g. wp-cli)
 #   bin/stack seed [count] [--due-now]  # seed <count> (default 50) pending probe actions
 #   bin/stack reset [count] [--due-now] # clear transient/claims/leftovers, then re-seed
 #   bin/stack preflight                 # assert preconditions, emit a JSON snapshot
@@ -122,7 +122,7 @@ occupancy_curl_wave() {
 # Polled via a plain wp-cli process (CLI SAPI), not over HTTP -- so polling
 # never competes with the front-end requests for a php-cli-server worker.
 occupancy_pending_count() {
-    compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/pending-count.php --allow-root 2>/dev/null | tail -1
+    compose exec -T php-fpm wp eval-file --use-include /opt/wpcas-tools/pending-count.php --allow-root 2>/dev/null | tail -1
 }
 
 # Fires the single request that starts the drain, timed and status-coded in
@@ -134,10 +134,14 @@ occupancy_pending_count() {
 # unauthenticated hit still bootstraps far enough to dispatch before
 # redirecting to wp-login.php, so no admin credentials are needed here.
 # Empirically confirmed against this stack: hitting the bare front end (`/`
-# or `/wp-admin/` without `index.php`, which this repo's router.php falls
+# or `/wp-admin/` without `index.php`, which nginx's own try_files falls
 # through to the front controller for) never dispatches a drain at all.
+# `/wp` prefix (issue #29): core -- including wp-admin -- now lives under
+# that path; the bare front end stays unprefixed, which is why this is the
+# only URL below to change and the occupancy curl waves' own root ("/")
+# request does not.
 occupancy_trigger() {
-    curl -s -o /dev/null -w '%{http_code} %{time_total}' "http://localhost:${STACK_PORT}/wp-admin/index.php"
+    curl -s -o /dev/null -w '%{http_code} %{time_total}' "http://localhost:${STACK_PORT}/wp/wp-admin/index.php"
 }
 
 run_occupancy() {
@@ -150,13 +154,21 @@ run_occupancy() {
     # `bin/stack occupancy 50 > record.json`) the same way `preflight` alone
     # already is.
     echo "== occupancy: reset ${count} (due-now) ==" >&2
-    compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/reset.php "$count" due-now --allow-root >&2
+    compose exec -T php-fpm wp eval-file --use-include /opt/wpcas-tools/reset.php "$count" due-now --allow-root >&2
 
     echo "== occupancy: preflight ==" >&2
-    compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/preflight.php --allow-root >&2
+    compose exec -T php-fpm wp eval-file --use-include /opt/wpcas-tools/preflight.php --allow-root >&2
 
+    # Issue #29: PHP_CLI_SERVER_WORKERS no longer exists (it was the
+    # built-in server's own worker-pool env var, deleted along with
+    # php -S itself) -- printenv now always fails to find it, which would
+    # otherwise abort this whole script under `set -e -o pipefail`. The
+    # `|| true` below restores the fallback-to-1 this line already
+    # intended for that case; php-fpm's actual pool size (and reporting
+    # it accurately here instead of this placeholder) is out of scope for
+    # this ticket -- see the occupancy-relabelling ticket.
     local workers_total
-    workers_total="$(compose exec -T wordpress printenv PHP_CLI_SERVER_WORKERS 2>/dev/null | tr -d '\r\n')"
+    workers_total="$(compose exec -T php-fpm printenv PHP_CLI_SERVER_WORKERS 2>/dev/null | tr -d '\r\n' || true)"
     [ -n "$workers_total" ] || workers_total=1
 
     echo "== occupancy: baseline waves (no drain in flight, workers_total=${workers_total}) ==" >&2
@@ -212,7 +224,7 @@ run_occupancy() {
     jq -n \
         --arg server_model "php-cli-server" \
         --argjson workers_total "$workers_total" \
-        --arg trigger_url "http://localhost:${STACK_PORT}/wp-admin/index.php" \
+        --arg trigger_url "http://localhost:${STACK_PORT}/wp/wp-admin/index.php" \
         --argjson trigger_response_seconds "$trigger_time" \
         --argjson trigger_http_code "$trigger_code" \
         --argjson pending_before "$count" \
@@ -249,11 +261,11 @@ case "$cmd" in
         compose down "$@"
         ;;
     shell)
-        compose exec wordpress bash "$@"
+        compose exec php-fpm bash "$@"
         ;;
     exec)
         # -T: no pseudo-tty, so this also works from non-interactive scripts.
-        compose exec -T wordpress "$@"
+        compose exec -T php-fpm "$@"
         ;;
     seed)
         # -T: see `exec` above -- this also runs from non-interactive scripts.
@@ -269,13 +281,13 @@ case "$cmd" in
         # validates assoc-args strictly against its own command signature
         # and rejects any `--flag` it doesn't itself recognize -- see
         # seed.php's docstring.
-        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/seed.php "${@/--due-now/due-now}" --allow-root
+        compose exec -T php-fpm wp eval-file --use-include /opt/wpcas-tools/seed.php "${@/--due-now/due-now}" --allow-root
         ;;
     reset)
-        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/reset.php "${@/--due-now/due-now}" --allow-root
+        compose exec -T php-fpm wp eval-file --use-include /opt/wpcas-tools/reset.php "${@/--due-now/due-now}" --allow-root
         ;;
     preflight)
-        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/preflight.php "$@" --allow-root
+        compose exec -T php-fpm wp eval-file --use-include /opt/wpcas-tools/preflight.php "$@" --allow-root
         ;;
     measure|measure-http)
         # Runs one control -- a CLI control (issue #4, `measure`) or an
@@ -309,7 +321,7 @@ case "$cmd" in
         outfile="$RESULTS_DIR/$(date -u +%Y%m%dT%H%M%SZ)-${control}.json"
         tmpfile="$(mktemp "${outfile}.XXXXXX.tmp")"
         rc=0
-        compose exec -T wordpress wp eval-file --use-include "$script" "$control" --allow-root > "$tmpfile" || rc=$?
+        compose exec -T php-fpm wp eval-file --use-include "$script" "$control" --allow-root > "$tmpfile" || rc=$?
         if [ "$rc" -eq 0 ]; then
             mv "$tmpfile" "$outfile"
             echo "" >&2
@@ -330,7 +342,7 @@ case "$cmd" in
         outfile="$RESULTS_DIR/$(date -u +%Y%m%dT%H%M%SZ)-async-ajax-${scenario}.json"
         tmpfile="$(mktemp "${outfile}.XXXXXX.tmp")"
         rc=0
-        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/measure-async-ajax.php "$scenario" --allow-root > "$tmpfile" || rc=$?
+        compose exec -T php-fpm wp eval-file --use-include /opt/wpcas-tools/measure-async-ajax.php "$scenario" --allow-root > "$tmpfile" || rc=$?
         if [ "$rc" -eq 0 ]; then
             mv "$tmpfile" "$outfile"
             echo "" >&2
@@ -351,7 +363,7 @@ case "$cmd" in
         outfile="$RESULTS_DIR/$(date -u +%Y%m%dT%H%M%SZ)-admin-page-load-${scenario}.json"
         tmpfile="$(mktemp "${outfile}.XXXXXX.tmp")"
         rc=0
-        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/measure-admin-page-load.php "$scenario" --allow-root > "$tmpfile" || rc=$?
+        compose exec -T php-fpm wp eval-file --use-include /opt/wpcas-tools/measure-admin-page-load.php "$scenario" --allow-root > "$tmpfile" || rc=$?
         if [ "$rc" -eq 0 ]; then
             mv "$tmpfile" "$outfile"
             echo "" >&2
@@ -372,7 +384,7 @@ case "$cmd" in
         outfile="$RESULTS_DIR/$(date -u +%Y%m%dT%H%M%SZ)-manual-run-${scenario}.json"
         tmpfile="$(mktemp "${outfile}.XXXXXX.tmp")"
         rc=0
-        compose exec -T wordpress wp eval-file --use-include /opt/wpcas-tools/measure-manual-run.php "$scenario" --allow-root > "$tmpfile" || rc=$?
+        compose exec -T php-fpm wp eval-file --use-include /opt/wpcas-tools/measure-manual-run.php "$scenario" --allow-root > "$tmpfile" || rc=$?
         if [ "$rc" -eq 0 ]; then
             mv "$tmpfile" "$outfile"
             echo "" >&2
@@ -399,7 +411,7 @@ case "$cmd" in
                 exit 1
                 ;;
         esac
-        WPCAS_DISABLE_WP_CRON="$value" compose up -d wordpress
+        WPCAS_DISABLE_WP_CRON="$value" compose up -d php-fpm
         echo "DISABLE_WP_CRON is now ${value} (container recreated, image not rebuilt)." >&2
         ;;
     occupancy)
@@ -411,8 +423,8 @@ case "$cmd" in
         echo "Usage: $(basename "$0") {up|down|shell|exec|seed|reset|preflight|measure|measure-http|measure-async-ajax|measure-admin-page-load|measure-manual-run|set-disable-wp-cron|occupancy} [args...]" >&2
         echo "  up                    build and start the stack" >&2
         echo "  down                  stop and remove the stack" >&2
-        echo "  shell                 open a shell in the wordpress container" >&2
-        echo "  exec <cmd>            run <cmd> in the wordpress container, e.g.:" >&2
+        echo "  shell                 open a shell in the php-fpm container" >&2
+        echo "  exec <cmd>            run <cmd> in the php-fpm container, e.g.:" >&2
         echo "                          bin/stack exec wp core is-installed" >&2
         echo "  seed [count] [--due-now]   seed <count> (default 50) pending probe actions" >&2
         echo "  reset [count] [--due-now]  clear transient/claims/leftovers, then re-seed" >&2
