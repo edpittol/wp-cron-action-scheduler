@@ -40,6 +40,13 @@ services:
       # docker/mu-plugins-available/, which is not itself mounted or
       # scanned by WordPress) are currently armed.
       - ./docker/mu-plugins:/var/www/html/wp/wp-content/mu-plugins
+      # Issue #33: nginx's own access log, so measure-http.php (which runs
+      # inside *this* container, via `wp eval-file`) can read the web
+      # server's line for a request it just issued, and correlate it by
+      # request id against PHP-FPM's own access log (local to this same
+      # container -- no volume needed for that half). Read-only here: this
+      # container never writes to nginx's log, only reads it back.
+      - nginx-access-log:/var/log/wpcas-nginx:ro
 
   nginx:
     # Single pinned tag: nginx's whole "build" is this one image, so this
@@ -57,7 +64,15 @@ services:
       # needs to write into the document root itself.
       - webroot:/var/www/html:ro
       - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      # Issue #33: writable side of the shared access-log volume above --
+      # nginx is the only service that writes to it.
+      - nginx-access-log:/var/log/wpcas-nginx
 
 volumes:
   webroot:
   wp-database:
+  # Issue #33: not a bind mount, same reasoning as webroot/wp-database --
+  # this only needs to be visible to both containers for the lifetime of
+  # the stack, and (unlike mu-plugins) nothing on the host ever needs to
+  # edit it directly.
+  nginx-access-log:

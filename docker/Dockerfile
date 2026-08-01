@@ -69,6 +69,15 @@ RUN mkdir -p /var/log/wpcas \
 RUN touch /var/log/wpcas/fastcgi-isolation.log \
     && chmod 666 /var/log/wpcas/fastcgi-isolation.log
 
+# Issue #33: the process manager's (PHP-FPM's) own access log ships
+# commented out in this base image's default pool config -- see
+# docker/php-fpm/access-log.conf's own docblock for the directives this
+# re-declares and why. Copied in under a name that sorts after www.conf
+# (PHP-FPM merges same-named pool sections across conf.d files, later file
+# wins per directive), so only `access.log`/`access.format` are overridden
+# -- everything else that pool's default already set is untouched.
+COPY php-fpm/access-log.conf /usr/local/etc/php-fpm.d/zz-wpcas-access-log.conf
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         unzip \
