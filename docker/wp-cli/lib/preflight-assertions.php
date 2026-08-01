@@ -21,6 +21,10 @@ declare( strict_types=1 );
  *     callback_attached: bool,
  *     cron_in_progress: bool,
  *     claims_count: int,
+ *     pool_max_children: int|null,
+ *     max_execution_time_seconds: int|null,
+ *     request_terminate_timeout_seconds: int|null,
+ *     fastcgi_read_timeout_seconds: int|null,
  * } $facts
  *
  * @return array{
@@ -53,6 +57,27 @@ function wpcas_preflight_evaluate( array $facts ): array {
 		$failures[] = sprintf( 'the claims table is not empty, found %d row(s)', $facts['claims_count'] );
 	}
 
+	// Issue #30: the worker pool ceiling and every relevant timeout must be
+	// readable back from the running stack, not merely pinned somewhere a
+	// reader has to go trust unread. A null here means
+	// wpcas_probe_server_config() (docker/wp-cli/lib/probe.php) couldn't
+	// read the config file it expects to find that fact in -- e.g. a stack
+	// built before this pin existed, or a config file moved without
+	// updating the path it's read from. Either way, that's exactly the kind
+	// of "known configuration" gap this ticket exists to make loud rather
+	// than let a result record silently carry a null where a number belongs.
+	$config_facts = array(
+		'pool_max_children'                 => 'the PHP-FPM pool worker ceiling',
+		'max_execution_time_seconds'        => "PHP's own max_execution_time",
+		'request_terminate_timeout_seconds' => "PHP-FPM's request_terminate_timeout",
+		'fastcgi_read_timeout_seconds'      => "nginx's fastcgi_read_timeout",
+	);
+	foreach ( $config_facts as $key => $label ) {
+		if ( null === $facts[ $key ] ) {
+			$failures[] = sprintf( 'could not read %s back from the running stack (got null)', $label );
+		}
+	}
+
 	$ok = array() === $failures;
 
 	return array(
@@ -64,7 +89,17 @@ function wpcas_preflight_evaluate( array $facts ): array {
 			'callback_attached' => $facts['callback_attached'],
 			'cron_in_progress'  => $facts['cron_in_progress'],
 			'claims_count'      => $facts['claims_count'],
-			'failures'          => $failures,
+			// Issue #30: the worker pool ceiling and every relevant
+			// timeout, read back from the running stack (see
+			// wpcas_probe_server_config() in docker/wp-cli/lib/probe.php)
+			// so a reader can attribute an occupancy figure to its
+			// configuration from this record alone, without inspecting the
+			// image.
+			'pool_max_children'                 => $facts['pool_max_children'],
+			'max_execution_time_seconds'         => $facts['max_execution_time_seconds'],
+			'request_terminate_timeout_seconds'  => $facts['request_terminate_timeout_seconds'],
+			'fastcgi_read_timeout_seconds'       => $facts['fastcgi_read_timeout_seconds'],
+			'failures'                           => $failures,
 		),
 	);
 }
