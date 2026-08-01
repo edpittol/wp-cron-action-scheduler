@@ -40,6 +40,16 @@ services:
       # docker/mu-plugins-available/, which is not itself mounted or
       # scanned by WordPress) are currently armed.
       - ./docker/mu-plugins:/var/www/html/wp/wp-content/mu-plugins
+      # Issue #30: the exact same file the nginx service below mounts as its
+      # own fastcgi_read_timeout include, bind-mounted read-only into this
+      # container too -- so a `wp eval-file` process running here
+      # (docker/wp-cli/lib/probe.php's preflight fact-gathering) can read
+      # nginx's own upstream-read-timeout value back from the identical
+      # bytes nginx itself is running with, without a second, separately
+      # maintained copy of that number that could silently drift out of
+      # agreement with it. See docker/nginx/fastcgi-read-timeout.conf's own
+      # comment for the full rationale.
+      - ./docker/nginx/fastcgi-read-timeout.conf:/etc/wpcas/nginx-fastcgi-read-timeout.conf:ro
 
   nginx:
     # Single pinned tag: nginx's whole "build" is this one image, so this
@@ -57,6 +67,10 @@ services:
       # needs to write into the document root itself.
       - webroot:/var/www/html:ro
       - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      # Issue #30: the fastcgi_read_timeout include default.conf's php
+      # location block pulls in -- see that file and
+      # docker/nginx/fastcgi-read-timeout.conf's own comments.
+      - ./docker/nginx/fastcgi-read-timeout.conf:/etc/nginx/conf.d/fastcgi-read-timeout.conf:ro
 
 volumes:
   webroot:

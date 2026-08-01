@@ -72,6 +72,7 @@ declare( strict_types=1 );
  * intentionally triggers via the row-action link.
  */
 
+require __DIR__ . '/lib/server-config.php';
 require __DIR__ . '/lib/probe.php';
 require __DIR__ . '/lib/preflight-assertions.php';
 require __DIR__ . '/lib/result-record.php';
@@ -124,19 +125,8 @@ fwrite( STDERR, "Canary log destination '{$canary_log_path}' verified writable (
 
 // --- Preflight (same facts/evaluation as preflight.php/measure.php) -----
 
-$lockfile_versions = wpcas_probe_lockfile_versions();
-
-$preflight_facts = array(
-	'pending_count'                     => wpcas_probe_pending_count(),
-	'callback_attached'                 => wpcas_probe_callback_attached(),
-	'cron_in_progress'                  => wpcas_probe_cron_in_progress(),
-	'claims_count'                      => wpcas_probe_claims_count(),
-	'wp_version'                        => wpcas_probe_wp_version(),
-	'wp_version_lockfile'               => $lockfile_versions['wordpress'],
-	'action_scheduler_version'          => wpcas_probe_action_scheduler_version(),
-	'action_scheduler_version_lockfile' => $lockfile_versions['action_scheduler'],
-);
-$preflight = wpcas_preflight_evaluate( $preflight_facts );
+$preflight_facts = wpcas_probe_gather_preflight_facts();
+$preflight       = wpcas_preflight_evaluate( $preflight_facts );
 
 fwrite( STDERR, wp_json_encode( $preflight['snapshot'], JSON_PRETTY_PRINT ) . "\n" );
 
