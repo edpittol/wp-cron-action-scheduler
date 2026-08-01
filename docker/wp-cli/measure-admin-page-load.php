@@ -126,11 +126,17 @@ fwrite( STDERR, "Canary log destination '{$canary_log_path}' verified writable (
 
 // --- Preflight (same facts/evaluation as preflight.php/measure.php) -----
 
+$lockfile_versions = wpcas_probe_lockfile_versions();
+
 $preflight_facts = array(
-	'pending_count'     => wpcas_probe_pending_count(),
-	'callback_attached' => wpcas_probe_callback_attached(),
-	'cron_in_progress'  => wpcas_probe_cron_in_progress(),
-	'claims_count'      => wpcas_probe_claims_count(),
+	'pending_count'                     => wpcas_probe_pending_count(),
+	'callback_attached'                 => wpcas_probe_callback_attached(),
+	'cron_in_progress'                  => wpcas_probe_cron_in_progress(),
+	'claims_count'                      => wpcas_probe_claims_count(),
+	'wp_version'                        => wpcas_probe_wp_version(),
+	'wp_version_lockfile'               => $lockfile_versions['wordpress'],
+	'action_scheduler_version'          => wpcas_probe_action_scheduler_version(),
+	'action_scheduler_version_lockfile' => $lockfile_versions['action_scheduler'],
 );
 $preflight = wpcas_preflight_evaluate( $preflight_facts );
 
