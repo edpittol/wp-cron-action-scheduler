@@ -123,7 +123,7 @@ $facts = array(
 
 $record = wpcas_result_record_build( $facts );
 
-wpcas_test_assert_same( 'record: schema_version', 3, $record['schema_version'], $failures );
+wpcas_test_assert_same( 'record: schema_version', 4, $record['schema_version'], $failures );
 wpcas_test_assert_same( 'record: control', 'wp-cron', $record['control'], $failures );
 wpcas_test_assert_same( 'record: command argv', 'wp cron event run --due-now', $record['command']['argv'], $failures );
 wpcas_test_assert_same( 'record: command exit_code', 0, $record['command']['exit_code'], $failures );
@@ -204,7 +204,7 @@ $http_vector_facts['probe_records']    = array();
 $http_vector_record                    = wpcas_result_record_build( $http_vector_facts );
 wpcas_test_assert_same( 'http-vector row: command is null, not an object', null, $http_vector_record['command'], $failures );
 wpcas_test_assert_same( 'http-vector row: http_status carried through', 200, $http_vector_record['http_status'], $failures );
-wpcas_test_assert_same( 'http-vector row: schema_version', 3, $http_vector_record['schema_version'], $failures );
+wpcas_test_assert_same( 'http-vector row: schema_version', 4, $http_vector_record['schema_version'], $failures );
 
 // --- canary_line (issue #6) ----------------------------------------------
 //
@@ -254,6 +254,64 @@ $facts_manual_run_no_canary['canary_line'] = null;
 $record_manual_run_no_canary               = wpcas_result_record_build( $facts_manual_run_no_canary );
 wpcas_test_assert_same( 'manual-run row: canary_line is null', null, $record_manual_run_no_canary['canary_line'], $failures );
 wpcas_test_assert_same( 'manual-run row: canary_fired is false', false, $record_manual_run_no_canary['canary_fired'], $failures );
+
+// --- server_observed (issue #33) -----------------------------------------
+//
+// Additive, backward-compatible field: every existing caller of this
+// function (measure.php's two CLI-control rows, measure-async-ajax.php,
+// measure-admin-page-load.php, measure-manual-run.php) never passes
+// 'server_observed' at all, so it must default to null as a whole rather
+// than raising a notice or being silently omitted -- same discipline as
+// http_status/command/canary_line.
+wpcas_test_assert_same( 'record without server_observed: defaults to null', null, $record['server_observed'], $failures );
+
+// The headline case measure-http.php's correlation (lib/correlation.php)
+// produces: both the web server's and the process manager's independently
+// recorded statuses, passed through verbatim.
+$facts_with_server_observed                     = $http_vector_facts;
+$facts_with_server_observed['server_observed']  = array(
+	'web_status' => 200,
+	'fpm_status' => 200,
+);
+$record_with_server_observed                    = wpcas_result_record_build( $facts_with_server_observed );
+wpcas_test_assert_same(
+	'record with server_observed: passed through verbatim',
+	array( 'web_status' => 200, 'fpm_status' => 200 ),
+	$record_with_server_observed['server_observed'],
+	$failures
+);
+
+// The masking case this ticket exists to make provable: the two
+// sub-fields disagreeing (client saw 200, process manager recorded 403) is
+// carried through exactly as correlated, not reconciled or dropped.
+$facts_with_masked_server_observed                    = $http_vector_facts;
+$facts_with_masked_server_observed['server_observed'] = array(
+	'web_status' => 200,
+	'fpm_status' => 403,
+);
+$record_with_masked_server_observed                   = wpcas_result_record_build( $facts_with_masked_server_observed );
+wpcas_test_assert_same(
+	'record with masked server_observed: web/fpm statuses disagree, both preserved',
+	array( 'web_status' => 200, 'fpm_status' => 403 ),
+	$record_with_masked_server_observed['server_observed'],
+	$failures
+);
+
+// Either sub-field is independently nullable when correlation found no
+// matching line in that source -- not fabricated, not defaulted to the
+// other side's value.
+$facts_with_partial_server_observed                    = $http_vector_facts;
+$facts_with_partial_server_observed['server_observed']  = array(
+	'web_status' => 200,
+	'fpm_status' => null,
+);
+$record_with_partial_server_observed                    = wpcas_result_record_build( $facts_with_partial_server_observed );
+wpcas_test_assert_same(
+	'record with partial server_observed: fpm_status stays null',
+	array( 'web_status' => 200, 'fpm_status' => null ),
+	$record_with_partial_server_observed['server_observed'],
+	$failures
+);
 
 if ( array() !== $failures ) {
 	fwrite( STDERR, "FAIL\n" );
