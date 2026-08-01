@@ -42,6 +42,12 @@ $good_facts = array(
 	'wp_version_lockfile'               => '7.0.2',
 	'action_scheduler_version'          => '4.0.0',
 	'action_scheduler_version_lockfile' => '4.0.0',
+	// Issue #30: the worker pool ceiling and every relevant timeout, read
+	// back from the running stack.
+	'pool_max_children'                 => 6,
+	'max_execution_time_seconds'        => 30,
+	'request_terminate_timeout_seconds' => 35,
+	'fastcgi_read_timeout_seconds'      => 40,
 );
 
 // A fully healthy state passes with no failures reported.
@@ -52,6 +58,25 @@ wpcas_test_assert_same( 'healthy state: snapshot ok', true, $result['snapshot'][
 wpcas_test_assert_same( 'healthy state: snapshot pending_count', 50, $result['snapshot']['pending_count'], $failures );
 wpcas_test_assert_same( 'healthy state: snapshot wp_version', '7.0.2', $result['snapshot']['wp_version'], $failures );
 wpcas_test_assert_same( 'healthy state: snapshot action_scheduler_version', '4.0.0', $result['snapshot']['action_scheduler_version'], $failures );
+
+// Issue #30: all four config facts are carried through into the snapshot
+// verbatim -- this is the "read back into the preflight snapshot, and
+// therefore into every result record" acceptance criterion, pinned down at
+// the pure-logic layer.
+wpcas_test_assert_same( 'healthy state: snapshot pool_max_children', 6, $result['snapshot']['pool_max_children'], $failures );
+wpcas_test_assert_same( 'healthy state: snapshot max_execution_time_seconds', 30, $result['snapshot']['max_execution_time_seconds'], $failures );
+wpcas_test_assert_same( 'healthy state: snapshot request_terminate_timeout_seconds', 35, $result['snapshot']['request_terminate_timeout_seconds'], $failures );
+wpcas_test_assert_same( 'healthy state: snapshot fastcgi_read_timeout_seconds', 40, $result['snapshot']['fastcgi_read_timeout_seconds'], $failures );
+
+// Issue #30: a config fact that couldn't be read back from the running
+// stack (null -- see wpcas_probe_server_config() in
+// docker/wp-cli/lib/probe.php for when this happens) fails preflight
+// explicitly, the same "loud, not silent" discipline this file already
+// applies to the original four facts -- a null here is exactly the kind of
+// unattributable occupancy figure this ticket exists to rule out.
+$result = wpcas_preflight_evaluate( array_merge( $good_facts, array( 'pool_max_children' => null ) ) );
+wpcas_test_assert_same( 'unreadable pool_max_children: ok', false, $result['ok'], $failures );
+wpcas_test_assert_same( 'unreadable pool_max_children: failure count', 1, count( $result['failures'] ), $failures );
 
 // A zero pending count fails -- this is the "instant no-op" false result
 // the ticket is centrally worried about: nothing ran, but the count is
@@ -76,16 +101,27 @@ wpcas_test_assert_same( 'dirty claims: ok', false, $result['ok'], $failures );
 // Every assertion is independent -- a state failing all four reports all
 // four, not just the first one found. Preflight is supposed to abort
 // loudly with the full picture, not make the caller re-run it four times.
+// Config facts (issue #30) are left at their healthy values here on
+// purpose, so this stays a test of the original four checks specifically
+// -- see the "all eight broken" case below for every check failing at once.
 $result = wpcas_preflight_evaluate(
-	array(
-		'pending_count'                     => 0,
-		'callback_attached'                 => false,
-		'cron_in_progress'                  => true,
-		'claims_count'                      => 3,
-		'wp_version'                        => '7.0.2',
-		'wp_version_lockfile'               => '7.0.2',
-		'action_scheduler_version'          => '4.0.0',
-		'action_scheduler_version_lockfile' => '4.0.0',
+	array_merge(
+		array(
+			'pending_count'                     => 0,
+			'callback_attached'                 => false,
+			'cron_in_progress'                  => true,
+			'claims_count'                      => 3,
+			'wp_version'                        => '7.0.2',
+			'wp_version_lockfile'               => '7.0.2',
+			'action_scheduler_version'          => '4.0.0',
+			'action_scheduler_version_lockfile' => '4.0.0',
+		),
+		array(
+			'pool_max_children'                 => $good_facts['pool_max_children'],
+			'max_execution_time_seconds'        => $good_facts['max_execution_time_seconds'],
+			'request_terminate_timeout_seconds' => $good_facts['request_terminate_timeout_seconds'],
+			'fastcgi_read_timeout_seconds'      => $good_facts['fastcgi_read_timeout_seconds'],
+		)
 	)
 );
 wpcas_test_assert_same( 'all broken: ok', false, $result['ok'], $failures );
@@ -132,19 +168,54 @@ wpcas_test_assert_same( 'mismatch: snapshot action_scheduler_version_lockfile', 
 // same "no re-running to find the next failure" guarantee as the
 // four-assertion case above, now extended to the version check.
 $result = wpcas_preflight_evaluate(
-	array(
-		'pending_count'                     => 0,
-		'callback_attached'                 => false,
-		'cron_in_progress'                  => true,
-		'claims_count'                      => 3,
-		'wp_version'                        => '7.0.1',
-		'wp_version_lockfile'               => '7.0.2',
-		'action_scheduler_version'          => '3.9.2',
-		'action_scheduler_version_lockfile' => '4.0.0',
+	array_merge(
+		array(
+			'pending_count'                     => 0,
+			'callback_attached'                 => false,
+			'cron_in_progress'                  => true,
+			'claims_count'                      => 3,
+			'wp_version'                        => '7.0.1',
+			'wp_version_lockfile'               => '7.0.2',
+			'action_scheduler_version'          => '3.9.2',
+			'action_scheduler_version_lockfile' => '4.0.0',
+		),
+		array(
+			'pool_max_children'                 => $good_facts['pool_max_children'],
+			'max_execution_time_seconds'        => $good_facts['max_execution_time_seconds'],
+			'request_terminate_timeout_seconds' => $good_facts['request_terminate_timeout_seconds'],
+			'fastcgi_read_timeout_seconds'      => $good_facts['fastcgi_read_timeout_seconds'],
+		)
 	)
 );
 wpcas_test_assert_same( 'all broken including versions: ok', false, $result['ok'], $failures );
 wpcas_test_assert_same( 'all broken including versions: failure count', 6, count( $result['failures'] ), $failures );
+
+// Issue #30: every check failing at once (the original four, plus all four
+// config facts unreadable, versions left healthy) reports all eight
+// failures, not just the first one found -- same "loud, full picture"
+// discipline extended to the new checks.
+$result = wpcas_preflight_evaluate(
+	array_merge(
+		array(
+			'pending_count'                     => 0,
+			'callback_attached'                 => false,
+			'cron_in_progress'                  => true,
+			'claims_count'                      => 3,
+			'wp_version'                        => $good_facts['wp_version'],
+			'wp_version_lockfile'               => $good_facts['wp_version_lockfile'],
+			'action_scheduler_version'          => $good_facts['action_scheduler_version'],
+			'action_scheduler_version_lockfile' => $good_facts['action_scheduler_version_lockfile'],
+		),
+		array(
+			'pool_max_children'                 => null,
+			'max_execution_time_seconds'         => null,
+			'request_terminate_timeout_seconds'  => null,
+			'fastcgi_read_timeout_seconds'       => null,
+		)
+	)
+);
+wpcas_test_assert_same( 'all eight broken: ok', false, $result['ok'], $failures );
+wpcas_test_assert_same( 'all eight broken: failure count', 8, count( $result['failures'] ), $failures );
 
 if ( array() !== $failures ) {
 	fwrite( STDERR, "FAIL\n" );
