@@ -1,36 +1,30 @@
-FROM php:8.3-cli-bookworm
+# --- Single place the PHP version is pinned. ------------------------------
+# Same discipline this repo already applied to ACTION_SCHEDULER_VERSION
+# (that version now comes from docker/composer.lock instead -- see the
+# Composer RUN step below): one ARG default, and docker-compose.yml
+# deliberately does not pass a build `args:` override for it, so there is
+# exactly one place this image's PHP version can come from. nginx's version
+# gets the equivalent treatment as a single pinned `image:` tag on the
+# `nginx` service in docker-compose.yml -- there is no Dockerfile for that
+# image, so that one tag is its only source of truth.
+ARG PHP_VERSION=8.3-fpm-bookworm
+FROM php:${PHP_VERSION}
 
-# --- Single place the Action Scheduler version is pinned. -----------------
-# Every other reference in this image (the download URL, the label below)
-# is derived from this one build arg default. Acceptance criterion:
-# "Action Scheduler 4.0.0 is active, with its version pinned in exactly one
-# place." docker-compose.yml deliberately does NOT pass a build `args:`
-# value for this -- doing so would create a second source of truth that
-# could silently diverge from this default.
-#
-# Caveat: wp-content/database (the actual SQLite data file) is a named
-# volume so it survives `bin/stack down` / `up`, but everything else under
-# wp-content -- including this plugin directory -- is baked into the image
-# and is NOT volume-shadowed. That means a rebuild after bumping this ARG
-# does take effect on the next `up`, with no volume wipe required.
-ARG ACTION_SCHEDULER_VERSION=4.0.0
-ENV ACTION_SCHEDULER_VERSION=${ACTION_SCHEDULER_VERSION}
-LABEL org.opencontainers.image.description="WordPress (PHP built-in server + SQLite) with Action Scheduler ${ACTION_SCHEDULER_VERSION}"
+LABEL org.opencontainers.image.description="WordPress (nginx + PHP-FPM + SQLite) with Action Scheduler, both pinned via docker/composer.lock"
 
-# WP-CLI's extractor needs more than PHP's stock 128M default to unpack the
-# WordPress core tarball.
+# WP-CLI's and Composer's extractors need more than PHP's stock 128M
+# default to unpack the WordPress core and plugin archives.
 RUN echo "memory_limit = 512M" > /usr/local/etc/php/conf.d/memory-limit.ini
 
 # Issue #6's canary guard (docker/mu-plugins-available/30-log-non-cli-canary.php)
 # writes to PHP's error log. Left at its default, PHP's `error_log` ini
-# directive is empty, which for the built-in `php -S` server means every
-# error_log() call goes to the server process's own STDERR -- captured (if
-# at all) by whatever runs the container, not by any file this repo's
-# tooling can read back to confirm the canary actually fired. Pointing
-# `error_log` at a concrete, writable path here means the canary's
-# destination is a known file both the serving process (entrypoint's
-# `php -S`) and any `wp` CLI invocation (same php.ini/conf.d) write to and
-# can be read back from -- and, critically, something
+# directive is empty, which under PHP-FPM means every error_log() call
+# would go wherever the FPM pool happens to send stderr -- not necessarily
+# a file this repo's tooling can read back to confirm the canary actually
+# fired. Pointing `error_log` at a concrete, writable path here means the
+# canary's destination is a known file both the serving process (php-fpm)
+# and any `wp` CLI invocation (same php.ini/conf.d) write to and can be
+# read back from -- and, critically, something
 # docker/wp-cli/measure-async-ajax.php can *verify* is actually being
 # written to before trusting its silence or its content, rather than
 # assuming a destination that might quietly be going nowhere readable.
@@ -61,10 +55,60 @@ RUN curl -fsSL -o /usr/local/bin/wp \
     && chmod +x /usr/local/bin/wp \
     && wp cli version --allow-root
 
+# Composer itself -- only needed to run `composer install` below at image
+# build time; nothing in the running container invokes it afterwards.
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
 WORKDIR /var/www/html
 
-# WordPress core.
-RUN wp core download --allow-root --locale=en_US
+# --- The webroot, provisioned by Composer (issue #29 / ADR-0001) ---------
+#
+# Replaces the old `wp core download` + hand-rolled Action Scheduler zip
+# download with a single `composer install` run against a committed
+# lockfile (docker/composer.lock) -- closing the gap the README used to
+# admit ("[WordPress is] not pinned, and not recorded in any committed
+# result"). See docker/composer.json for the package list:
+#
+#   - johnpbloch/wordpress-core (+ its installer plugin), placed at ./wp
+#     via the `wordpress-install-dir` extra below -- full core, including
+#     its own default wp-content, exactly like `wp core download` used to
+#     produce, just relocated under a `/wp` prefix instead of living at
+#     the document root.
+#   - wpackagist-plugin/action-scheduler, pinned to 4.0.0 (the same
+#     version this image pinned before, now sourced from WordPress.org via
+#     WPackagist instead of the project's GitHub release asset).
+#   - wpackagist-plugin/sqlite-database-integration.
+#
+# Both plugins install to wp/wp-content/plugins/ (not the project-root
+# wp-content/ composer/installers would use by default) via the
+# `installer-paths` override in docker/composer.json -- content stays
+# exactly where a plain, non-Composer WordPress install would put it,
+# nested inside the core directory alongside wp-admin/wp-includes. This is
+# deliberately not Bedrock: nothing here renames wp-content or moves
+# configuration above the document root (see docs/adr/0001's "Layout"
+# section for the full rationale and the rejected Bedrock alternative).
+#
+# COMPOSER_ALLOW_SUPERUSER=1: this build runs as root (like every other
+# step in this image); Composer's own root check is a safety guard for
+# interactive/shared-host use that doesn't apply to a disposable build
+# stage.
+COPY composer.json composer.lock ./
+RUN COMPOSER_ALLOW_SUPERUSER=1 composer install \
+        --no-dev \
+        --no-interaction \
+        --no-progress \
+        --optimize-autoloader
+
+# SQLite Database Integration: place its db.php drop-in directly. The
+# drop-in's own fallback resolves the plugin folder from its own location
+# (wp-content/db.php -> wp-content/plugins/sqlite-database-integration), so
+# no placeholder rewriting is needed. This is what makes wpdb talk to
+# SQLite instead of the dummy MySQL credentials below, from the very first
+# request onward -- no runtime GET/nonce admin flow required, which
+# wouldn't be reachable headlessly anyway. README deviation 3 (SQLite, not
+# MySQL) is otherwise untouched by this ticket.
+RUN mkdir -p wp/wp-content/database \
+    && cp wp/wp-content/plugins/sqlite-database-integration/db.copy wp/wp-content/db.php
 
 # wp-config.php: dummy DB_* constants (unused once the SQLite drop-in takes
 # over), a site URL derived at runtime from the port this checkout was
@@ -74,17 +118,26 @@ RUN wp core download --allow-root --locale=en_US
 # regex-based one: Action Scheduler's claim query is an
 # `UPDATE t1 JOIN (subquery) t2 ... SET ...`, which the legacy translator
 # cannot rewrite for SQLite (`near "t1": syntax error`) but the AST driver
-# handles correctly. This is exactly the translation-layer risk this ticket
-# exists to settle -- see the "one scheduled action runs to completion"
-# verification below.
+# handles correctly. This is exactly the translation-layer risk issue #1
+# settled -- see that ticket's "one scheduled action runs to completion"
+# verification.
 #
 # Residual risk: the AST driver is the plugin's newer, less battle-tested
 # translator (as opposed to the legacy regex-based one it defaults to).
 # Every later scenario built on this stack now rides on that translator's
 # fidelity for whatever queries Action Scheduler issues -- a future
 # "zero drained" result should not be read as settled without first ruling
-# out an AST-driver translation gap, the same way this ticket ruled out the
+# out an AST-driver translation gap, the same way issue #1 ruled out the
 # legacy translator's JOIN-UPDATE gap.
+#
+# WP_SITEURL carries the `/wp` prefix core now lives under; WP_HOME does
+# not, so the site itself still resolves at the document root (issue #29
+# acceptance criterion). --path=wp below writes this file to wp/wp-config.php
+# first; the RUN step immediately after moves it up one directory -- the
+# same "wp-config.php lives one level above ABSPATH" arrangement WordPress
+# itself has supported since the "giving WordPress its own directory"
+# technique, and which core's own wp-load.php (and WP-CLI's own config
+# locator) already knows how to find without any further configuration.
 #
 # DISABLE_WP_CRON: added for issue #2. Action Scheduler registers its own
 # fallback queue runner as a WP-Cron event (`action_scheduler_run_queue`,
@@ -92,20 +145,14 @@ RUN wp core download --allow-root --locale=en_US
 # WP-Cron left on, core's own per-bootstrap wp_cron() check -- which runs
 # on practically every request *and* WP-CLI invocation, not just page
 # loads -- kept re-arming the "doing_cron" lock transient because that
-# queue-runner event is essentially always due. The built-in PHP server's
-# own async loopback to wp-cron.php doesn't reliably complete (no real
-# FPM/persistent worker pool backing it here), so the lock routinely
-# outlived its own trigger, sitting there for its full timeout even right
-# after `bin/stack reset` had just cleared it -- exactly the false
-# "cron-in-progress" state issue #2's preflight exists to catch, except
-# self-inflicted by WordPress's own default cron wiring rather than a
-# leftover from a previous run. This stack never relies on WP-Cron's
-# spawn/loopback path in the first place: issue #1's own verification
-# recipe drains the queue with the explicit `wp action-scheduler run`,
-# and issue #2's seed/reset/preflight tooling does the same. Turning off
-# the implicit spawn removes the self-inflicted churn without touching
-# either of those explicit, working paths, or Action Scheduler's separate
-# async-request dispatcher (unaffected by this constant).
+# queue-runner event is essentially always due. This stack never relies on
+# WP-Cron's spawn/loopback path in the first place: issue #1's own
+# verification recipe drains the queue with the explicit
+# `wp action-scheduler run`, and issue #2's seed/reset/preflight tooling
+# does the same. Turning off the implicit spawn removes the self-inflicted
+# churn without touching either of those explicit, working paths, or
+# Action Scheduler's separate async-request dispatcher (unaffected by this
+# constant).
 #
 # Runtime-switchable (issue #5): the value below is no longer the literal
 # `true` issue #2 baked in -- it reads the WPCAS_DISABLE_WP_CRON env var
@@ -133,56 +180,33 @@ RUN wp core download --allow-root --locale=en_US
 # already flags), and it is gated on DISABLE_WP_CRON, not on SAPI. With
 # that constant false (required for this scenario), every `wp eval-file`
 # this repo's own tooling runs (seed/reset/preflight/measure*) re-triggers
-# a spawn attempt on its own bootstrap -- which, on this stack's PHP
-# built-in server (no persistent worker pool), does not reliably
-# complete, leaving a stuck "doing_cron" lock that fails the *next*
-# command's preflight, or -- worse -- eventually *does* complete in the
-# background and silently drains the seeded queue outside of any
-# controlled measurement. Neither is what issue #5 is measuring: the
-# vector under test is one explicit, external, unauthenticated GET, not
-# this stack's own tooling accidentally triggering WP-Cron via its
-# incidental bootstrap. `DOING_CRON` is spawn_cron()'s own unconditional
-# early exit (`if ( defined('DOING_CRON') ... ) return false;`,
-# independent of DISABLE_WP_CRON) -- defining it true for every WP-CLI
-# process (WP_CLI is WP-CLI's own always-on constant, defined before
-# wp-config.php loads) suppresses exactly that self-spawn, for every
-# command, regardless of DISABLE_WP_CRON's value. It does not affect this
-# guard's own condition (guard 1 also requires PHP_SAPI !== 'cli', which
-# every WP-CLI process already satisfies) or any of this repo's existing,
-# already-verified CLI controls, which never depended on this constant.
+# a spawn attempt on its own bootstrap, which risks leaving a stuck
+# "doing_cron" lock that fails the *next* command's preflight, or --
+# worse -- eventually *does* complete in the background and silently
+# drains the seeded queue outside of any controlled measurement. Neither
+# is what issue #5 is measuring: the vector under test is one explicit,
+# external, unauthenticated GET, not this stack's own tooling accidentally
+# triggering WP-Cron via its incidental bootstrap. `DOING_CRON` is
+# spawn_cron()'s own unconditional early exit
+# (`if ( defined('DOING_CRON') ... ) return false;`, independent of
+# DISABLE_WP_CRON) -- defining it true for every WP-CLI process (WP_CLI is
+# WP-CLI's own always-on constant, defined before wp-config.php loads)
+# suppresses exactly that self-spawn, for every command, regardless of
+# DISABLE_WP_CRON's value. It does not affect this guard's own condition
+# (guard 1 also requires PHP_SAPI !== 'cli', which every WP-CLI process
+# already satisfies) or any of this repo's existing, already-verified CLI
+# controls, which never depended on this constant.
 RUN wp config create --allow-root \
+        --path=wp \
         --dbname=wordpress \
         --dbuser=wordpress \
         --dbpass=wordpress \
         --dbhost=localhost \
         --skip-check \
-        --extra-php="define( 'WP_HOME', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SITEURL', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SQLITE_AST_DRIVER', true ); define( 'DISABLE_WP_CRON', ( false === getenv( 'WPCAS_DISABLE_WP_CRON' ) || '' === getenv( 'WPCAS_DISABLE_WP_CRON' ) ) ? true : filter_var( getenv( 'WPCAS_DISABLE_WP_CRON' ), FILTER_VALIDATE_BOOLEAN ) ); if ( defined( 'WP_CLI' ) && WP_CLI ) { define( 'DOING_CRON', true ); }"
+        --extra-php="define( 'WP_HOME', 'http://localhost:' . getenv( 'STACK_PORT' ) ); define( 'WP_SITEURL', 'http://localhost:' . getenv( 'STACK_PORT' ) . '/wp' ); define( 'WP_SQLITE_AST_DRIVER', true ); define( 'DISABLE_WP_CRON', ( false === getenv( 'WPCAS_DISABLE_WP_CRON' ) || '' === getenv( 'WPCAS_DISABLE_WP_CRON' ) ) ? true : filter_var( getenv( 'WPCAS_DISABLE_WP_CRON' ), FILTER_VALIDATE_BOOLEAN ) ); if ( defined( 'WP_CLI' ) && WP_CLI ) { define( 'DOING_CRON', true ); }" \
+    && mv wp/wp-config.php wp-config.php
 
-# SQLite Database Integration: install the plugin, then place its db.php
-# drop-in directly. The drop-in's own fallback resolves the plugin folder
-# from its own location (wp-content/db.php -> wp-content/plugins/
-# sqlite-database-integration), so no placeholder rewriting is needed. This
-# is what makes wpdb talk to SQLite instead of the dummy MySQL credentials
-# above, from the very first request onward -- no runtime GET/nonce admin
-# flow required, which wouldn't be reachable headlessly anyway.
-RUN mkdir -p wp-content/plugins wp-content/database \
-    && curl -fsSL -o /tmp/sqlite-database-integration.zip \
-        https://downloads.wordpress.org/plugin/sqlite-database-integration.zip \
-    && unzip -q /tmp/sqlite-database-integration.zip -d wp-content/plugins \
-    && rm /tmp/sqlite-database-integration.zip \
-    && cp wp-content/plugins/sqlite-database-integration/db.copy wp-content/db.php
-
-# Action Scheduler, pinned via the ARG above and installed straight from the
-# project's own GitHub release asset (also distributed on WordPress.org, but
-# the GitHub release is the canonical, verifiable source for a tagged
-# version number).
-RUN curl -fsSL -o /tmp/action-scheduler.zip \
-        "https://github.com/woocommerce/action-scheduler/releases/download/${ACTION_SCHEDULER_VERSION}/action-scheduler.zip" \
-    && unzip -q /tmp/action-scheduler.zip -d wp-content/plugins \
-    && rm /tmp/action-scheduler.zip
-
-COPY router.php /var/www/html/router.php
-RUN mkdir -p wp-content/mu-plugins
+RUN mkdir -p wp/wp-content/mu-plugins
 # docker-compose.yml bind-mounts docker/mu-plugins/ over this path at
 # runtime (so bin/guard can arm/disarm guard files without a rebuild), so
 # this COPY is shadowed and has no effect when the image is run via
@@ -190,25 +214,33 @@ RUN mkdir -p wp-content/mu-plugins
 # this image directly (e.g. plain `docker run`, no compose, no bind
 # mount) -- kept for that case, not because it does anything under the
 # normal `bin/stack up` path.
-COPY mu-plugins/wpcas-poc-probe.php /var/www/html/wp-content/mu-plugins/wpcas-poc-probe.php
+COPY mu-plugins/wpcas-poc-probe.php /var/www/html/wp/wp-content/mu-plugins/wpcas-poc-probe.php
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Issue #2's seed/reset/preflight scripts, run via `wp eval-file`. Placed
-# outside the web root deliberately: router.php's try_files semantics hand
-# any *existing file* under /var/www/html straight to the built-in server
-# to execute in place (see its own docstring), so a .php file living under
-# wp-content would be directly, remotely requestable over HTTP. These
-# scripts assume a WP-CLI bootstrap ($args, WP_CLI::*), not an HTTP
-# request, so they live at /opt/wpcas-tools instead.
+# outside the web root deliberately: a .php file living under wp-content
+# would otherwise be directly, remotely requestable over HTTP (nginx's
+# `location ~ \.php$` block, docker/nginx/default.conf, passes any
+# existing .php file straight to php-fpm, no allow-list). These scripts
+# assume a WP-CLI bootstrap ($args, WP_CLI::*), not an HTTP request, so
+# they live at /opt/wpcas-tools instead -- unaffected by the webroot's
+# move to a Composer-provisioned /wp layout (issue #29 acceptance
+# criterion: "the measurement tooling stays outside the document root").
 COPY wp-cli/ /opt/wpcas-tools/
 
-# Enough php-cli-server workers that a loopback request (e.g. the async
-# Action Scheduler dispatcher, or wp-cron.php's own admin-ajax loopback)
-# can be served by a second worker instead of deadlocking against the one
-# worker that is still waiting on its own response.
-ENV PHP_CLI_SERVER_WORKERS=6
+# php-fpm's default pool listens on 9000; not published to the host (only
+# nginx's port is, via docker-compose.yml), but documented here the same
+# way EXPOSE 8080 documented the old built-in server's port.
+EXPOSE 9000
 
-EXPOSE 8080
+# Runtime working directory is core's own path, not the document root --
+# `docker compose exec php-fpm wp ...` (bin/stack's seed/reset/preflight/
+# measure* subcommands) rely on WP-CLI's own cwd-based lookup, and WP-CLI
+# only finds wp-config.php one directory up from a *WordPress* path (the
+# same rule entrypoint.sh's explicit --path=/var/www/html/wp already
+# depends on); it does not search back down into a `wp/` subdirectory from
+# the document root.
+WORKDIR /var/www/html/wp
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

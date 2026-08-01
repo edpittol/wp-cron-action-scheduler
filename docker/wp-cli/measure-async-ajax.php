@@ -192,6 +192,15 @@ $target_url = add_query_arg(
 	admin_url( 'admin-ajax.php' )
 );
 
+// Issue #29: admin_url() resolves against WP_SITEURL, "localhost:$STACK_PORT"
+// -- correct for a real external client, but nginx (not this php-fpm
+// container) is what actually listens there now, on a separate Compose
+// service. This works anyway: docker/mu-plugins/wpcas-internal-loopback-resolve.php
+// transparently redirects the *connection* (not the Host header WordPress
+// still sends) to nginx for any loopback built from this site's own
+// siteurl -- the same fix Action Scheduler's own internal async-dispatch
+// loopback needs and gets, since this repo can't edit that vendored code
+// directly. Nothing below needs to know any of that.
 fwrite( STDERR, sprintf( "Preflight passed. POSTing to %s (no cookies, no auth) against %d pending action(s)...\n", $target_url, $pending_before ) );
 
 $started_at = gmdate( 'c' );
