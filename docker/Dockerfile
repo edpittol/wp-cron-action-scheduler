@@ -35,8 +35,31 @@ RUN echo "memory_limit = 512M" > /usr/local/etc/php/conf.d/memory-limit.ini
 # assumption. Both of #7's measure-*.php scripts verify this file is
 # actually writable before trusting its silence or its content, same
 # discipline as measure-async-ajax.php above.
+#
+# chmod 666, not the default 644 `touch` would leave: every step in this
+# image runs as root, but php-fpm's default pool (this image pins no
+# override) runs its actual request-handling workers as www-data -- the
+# same root-owns-it/www-data-writes-it split docker/entrypoint.sh already
+# has to correct for wp-content/database. A root-owned 644 file is exactly
+# what the canary needs to write to and cannot: error_log() fails silently
+# (it returns true either way), so an unwritable destination is
+# indistinguishable from a guard that never fired.
+#
+# This specifically defeats the measure-*.php writability self-tests above
+# rather than being caught by them. Those run under `wp eval-file` via
+# `bin/stack`'s `compose exec -T php-fpm` -- as root, with no `--user` --
+# so they successfully write and read back their own marker while the
+# www-data worker serving the actual HTTP vector under test still cannot
+# append a thing. The self-test passes, the canary silently no-ops, and
+# the run records a false "canary did not fire".
+#
+# 666 rather than `chown www-data`: the file is deliberately shared by two
+# different users (root for every `wp` invocation, www-data for every
+# served request), and this is a disposable measurement container whose
+# whole job is being read back by tooling -- see README deviation notes.
 RUN mkdir -p /var/log/wpcas \
     && touch /var/log/wpcas/php-error.log \
+    && chmod 666 /var/log/wpcas/php-error.log \
     && printf 'log_errors = On\nerror_log = /var/log/wpcas/php-error.log\n' > /usr/local/etc/php/conf.d/error-log.ini
 
 RUN apt-get update \
