@@ -1,17 +1,25 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "control": "http-cron-armed",
   "command": null,
   "http_status": 200,
-  "started_at": "2026-08-01T13:33:31+00:00",
-  "finished_at": "2026-08-01T13:33:31+00:00",
-  "elapsed_seconds": 0.002740144729614258,
+  "started_at": "2026-08-02T15:24:01+00:00",
+  "finished_at": "2026-08-02T15:24:01+00:00",
+  "elapsed_seconds": 0.0022950172424316406,
   "preflight": {
     "ok": true,
     "pending_count": 50,
     "callback_attached": true,
     "cron_in_progress": false,
     "claims_count": 0,
+    "pool_max_children": 6,
+    "max_execution_time_seconds": 30,
+    "request_terminate_timeout_seconds": 35,
+    "fastcgi_read_timeout_seconds": 40,
+    "wp_version": "7.0.2",
+    "wp_version_lockfile": "7.0.2",
+    "action_scheduler_version": "4.0.0",
+    "action_scheduler_version_lockfile": "4.0.0",
     "failures": []
   },
   "cron_in_progress_after": false,
@@ -32,6 +40,12 @@
   "probe_records": [],
   "canary_line": null,
   "canary_fired": false,
+  "server_observed": {
+    "web_status": 200,
+    "fpm_status": 200
+  },
+  "post_flush_log_line": "[cron-guard] http entry point blocked post-flush: status=403",
+  "post_flush_status": 403,
   "matrix_context": {
     "scenario_label": "http-cron-armed",
     "armed_sections": [

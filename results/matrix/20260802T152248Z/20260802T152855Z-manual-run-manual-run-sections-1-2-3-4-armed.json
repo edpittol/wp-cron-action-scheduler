@@ -1,17 +1,25 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "control": "manual-run:manual-run-sections-1-2-3-4-armed",
   "command": null,
   "http_status": 200,
-  "started_at": "2026-07-29T17:53:11+00:00",
-  "finished_at": "2026-07-29T17:53:12+00:00",
-  "elapsed_seconds": 0.3180999755859375,
+  "started_at": "2026-08-02T15:28:55+00:00",
+  "finished_at": "2026-08-02T15:28:56+00:00",
+  "elapsed_seconds": 0.2952389717102051,
   "preflight": {
     "ok": true,
     "pending_count": 50,
     "callback_attached": true,
     "cron_in_progress": false,
     "claims_count": 0,
+    "pool_max_children": 6,
+    "max_execution_time_seconds": 30,
+    "request_terminate_timeout_seconds": 35,
+    "fastcgi_read_timeout_seconds": 40,
+    "wp_version": "7.0.2",
+    "wp_version_lockfile": "7.0.2",
+    "action_scheduler_version": "4.0.0",
+    "action_scheduler_version_lockfile": "4.0.0",
     "failures": []
   },
   "cron_in_progress_after": false,
@@ -35,17 +43,20 @@
   },
   "probe_records": [
     {
-      "sapi": "cli-server",
-      "pid": 20,
-      "timestamp": 1785347591.869873
+      "sapi": "fpm-fcgi",
+      "pid": 16,
+      "timestamp": 1785684535.79181
     }
   ],
   "canary_line": null,
   "canary_fired": false,
+  "server_observed": null,
+  "post_flush_log_line": null,
+  "post_flush_status": null,
   "vector": {
     "name": "authenticated-manual-run-scheduled-actions-admin-screen",
-    "target_url": "http://localhost:8785/wp-admin/tools.php?page=action-scheduler&row_action=run&row_id=3857&nonce=1600b525f3",
-    "target_action_id": "3857",
+    "target_url": "http://localhost:8650/wp/wp-admin/tools.php?page=action-scheduler&row_action=run&row_id=1357&nonce=a324f8b1d1",
+    "target_action_id": "1357",
     "authenticated_as": "admin",
     "authenticated_user_id": 1,
     "auth_method": "wp_set_auth_cookie() minted in-process (docker/wp-cli/lib/admin-auth.php) -- no password read, stored, or transmitted",
@@ -57,7 +68,7 @@
     "verified_writable": true
   },
   "settle_poll": {
-    "waited_seconds": 2.072978973388672,
+    "waited_seconds": 2.079900026321411,
     "settled": true,
     "timed_out": false,
     "progress_observed": true

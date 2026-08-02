@@ -9,7 +9,7 @@ declare( strict_types=1 );
  * invocation) from the host, alongside its own concurrent front-end HTTP
  * requests, to get ground truth for when the triggered drain starts and
  * ends -- polled this way (a plain CLI process) rather than over HTTP so
- * polling itself never consumes one of the php-cli-server workers being
+ * polling itself never consumes one of the PHP-FPM pool children being
  * measured.
  *
  * Usage: wp eval-file docker/wp-cli/pending-count.php

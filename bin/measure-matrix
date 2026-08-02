@@ -160,7 +160,7 @@ set_disable_wp_cron() {
 # never got a chance to run against a dispatch chain that started before
 # it was armed. Polling the pending count out-of-band (via wp-cli, never
 # HTTP, so this never competes with the thing being measured for a
-# php-cli-server worker) for three consecutive equal reads, 3s apart,
+# PHP-FPM pool child) for three consecutive equal reads, 3s apart,
 # before letting the NEXT scenario's reset run, gives such a chain a
 # generous bounded window to actually finish -- not a fabrication of any
 # figure, just waiting for real background work already in flight to

@@ -1,17 +1,25 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "control": "async-ajax:async-ajax-unarmed",
   "command": null,
   "http_status": 200,
-  "started_at": "2026-08-01T13:36:03+00:00",
-  "finished_at": "2026-08-01T13:36:20+00:00",
-  "elapsed_seconds": 16.86424207687378,
+  "started_at": "2026-08-02T15:26:34+00:00",
+  "finished_at": "2026-08-02T15:26:52+00:00",
+  "elapsed_seconds": 17.97062110900879,
   "preflight": {
     "ok": true,
     "pending_count": 50,
     "callback_attached": true,
     "cron_in_progress": false,
     "claims_count": 0,
+    "pool_max_children": 6,
+    "max_execution_time_seconds": 30,
+    "request_terminate_timeout_seconds": 35,
+    "fastcgi_read_timeout_seconds": 40,
+    "wp_version": "7.0.2",
+    "wp_version_lockfile": "7.0.2",
+    "action_scheduler_version": "4.0.0",
+    "action_scheduler_version_lockfile": "4.0.0",
     "failures": []
   },
   "cron_in_progress_after": false,
@@ -37,259 +45,262 @@
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591364.253567
+      "timestamp": 1785684395.370241
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591364.48109
+      "timestamp": 1785684395.592646
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591364.699502
+      "timestamp": 1785684395.809755
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591364.915816
+      "timestamp": 1785684396.032476
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591365.13368
+      "timestamp": 1785684396.25613
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591365.351122
+      "timestamp": 1785684396.474282
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591365.567229
+      "timestamp": 1785684396.690424
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591365.783146
+      "timestamp": 1785684396.909414
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591365.998684
+      "timestamp": 1785684397.129829
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591366.225033
+      "timestamp": 1785684397.349409
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591366.44245
+      "timestamp": 1785684397.571276
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591366.665611
+      "timestamp": 1785684397.788925
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591366.883664
+      "timestamp": 1785684398.005213
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591367.101467
+      "timestamp": 1785684398.228001
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591367.319496
+      "timestamp": 1785684398.445937
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591367.541043
+      "timestamp": 1785684398.66423
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591367.758411
+      "timestamp": 1785684398.88179
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591367.980558
+      "timestamp": 1785684399.099946
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591368.203077
+      "timestamp": 1785684399.31597
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591368.422446
+      "timestamp": 1785684399.539062
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591368.642631
+      "timestamp": 1785684399.756144
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591368.858058
+      "timestamp": 1785684399.972436
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591369.080481
+      "timestamp": 1785684400.193988
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591369.298093
+      "timestamp": 1785684400.412942
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591369.520112
+      "timestamp": 1785684400.631957
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591369.739941
+      "timestamp": 1785684400.848894
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591369.958673
+      "timestamp": 1785684401.073514
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591370.179916
+      "timestamp": 1785684401.29707
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591370.396499
+      "timestamp": 1785684401.520836
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591370.620757
+      "timestamp": 1785684401.738947
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591370.838443
+      "timestamp": 1785684401.962596
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591371.060802
+      "timestamp": 1785684402.185616
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591371.276926
+      "timestamp": 1785684402.40581
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591371.49295
+      "timestamp": 1785684402.616387
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591371.713521
+      "timestamp": 1785684402.834599
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591371.959938
+      "timestamp": 1785684403.053539
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591372.181141
+      "timestamp": 1785684403.272603
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591372.396236
+      "timestamp": 1785684403.493658
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591372.607045
+      "timestamp": 1785684403.713161
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591372.823044
+      "timestamp": 1785684403.932722
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591373.041779
+      "timestamp": 1785684404.152553
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591373.259066
+      "timestamp": 1785684404.371124
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591373.473971
+      "timestamp": 1785684404.590465
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591373.69412
+      "timestamp": 1785684404.806514
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591373.910571
+      "timestamp": 1785684405.031138
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591374.128647
+      "timestamp": 1785684405.247595
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591374.348596
+      "timestamp": 1785684405.466728
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591374.567996
+      "timestamp": 1785684405.6862
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591374.790491
+      "timestamp": 1785684405.902299
     },
     {
       "sapi": "fpm-fcgi",
       "pid": 16,
-      "timestamp": 1785591375.015751
+      "timestamp": 1785684406.122026
     }
   ],
   "canary_line": null,
   "canary_fired": false,
+  "server_observed": null,
+  "post_flush_log_line": null,
+  "post_flush_status": null,
   "vector": {
     "name": "unauthenticated-admin-ajax-async-runner",
-    "target_url": "http://localhost:8592/wp/wp-admin/admin-ajax.php?action=as_async_request_queue_runner&nonce=0d4c1f8e4a",
+    "target_url": "http://localhost:8650/wp/wp-admin/admin-ajax.php?action=as_async_request_queue_runner&nonce=531bd7206d",
     "nonce_action": "as_async_request_queue_runner",
     "nonce_minted_as_user_id": 0,
     "transport_error": null
