@@ -21,15 +21,11 @@ declare( strict_types=1 );
  * Invoked via `bin/stack preflight`.
  */
 
+require __DIR__ . '/lib/server-config.php';
 require __DIR__ . '/lib/probe.php';
 require __DIR__ . '/lib/preflight-assertions.php';
 
-$facts = array(
-	'pending_count'     => wpcas_probe_pending_count(),
-	'callback_attached' => wpcas_probe_callback_attached(),
-	'cron_in_progress'  => wpcas_probe_cron_in_progress(),
-	'claims_count'      => wpcas_probe_claims_count(),
-);
+$facts = wpcas_probe_gather_preflight_facts();
 
 $result = wpcas_preflight_evaluate( $facts );
 
