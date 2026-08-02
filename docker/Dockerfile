@@ -130,6 +130,17 @@ RUN printf '[www]\npm = static\npm.max_children = 6\nrequest_terminate_timeout =
 # instead, for exactly that reason.
 RUN printf 'max_execution_time = 30\n' > /usr/local/etc/php/conf.d/execution-time.ini
 
+# Issue #34's isolation proof files (COPY'd below, once the document root
+# exists) both write to this dedicated log, independent of the php-error
+# log above, so their server-side "post-flush status" record is never
+# mixed in with PHP's own deprecation/warning noise the way parsing that
+# log (lib/canary.php) has to allow for. chmod 666: both proof files run
+# as php-fpm's pool user (www-data, the base image's default), not the
+# root this RUN step executes as, so the file needs to be writable by a
+# different, non-owning user from the moment it's created.
+RUN touch /var/log/wpcas/fastcgi-isolation.log \
+    && chmod 666 /var/log/wpcas/fastcgi-isolation.log
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         unzip \
@@ -306,6 +317,20 @@ RUN mkdir -p wp/wp-content/mu-plugins
 # mount) -- kept for that case, not because it does anything under the
 # normal `bin/stack up` path.
 COPY mu-plugins/wpcas-poc-probe.php /var/www/html/wp/wp-content/mu-plugins/wpcas-poc-probe.php
+
+# Issue #34: the two-file fastcgi_finish_request() isolation proof,
+# placed directly at the document root (not nested under /wp, and not in
+# a subdirectory of their own) -- deliberately web-reachable and
+# independent of WordPress (see the two files' own docblocks, and this
+# repo's README "Caveats" section for why that's a documented trade-off
+# rather than an oversight). Not shadowed by any bind mount, unlike
+# mu-plugins above -- these two files are static and never need runtime
+# editing the way guard sections do. Source files live under
+# docker/fastcgi-isolation/ in this repo only for tidiness; nothing about
+# that source-side grouping carries over to where they land in the image.
+COPY fastcgi-isolation/flush-then-status.php /var/www/html/flush-then-status.php
+COPY fastcgi-isolation/status-then-flush.php /var/www/html/status-then-flush.php
+
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
