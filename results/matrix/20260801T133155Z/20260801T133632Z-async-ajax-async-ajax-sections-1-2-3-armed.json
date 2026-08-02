@@ -1,0 +1,311 @@
+{
+  "schema_version": 3,
+  "control": "async-ajax:async-ajax-sections-1-2-3-armed",
+  "command": null,
+  "http_status": 200,
+  "started_at": "2026-08-01T13:36:32+00:00",
+  "finished_at": "2026-08-01T13:36:49+00:00",
+  "elapsed_seconds": 16.978836059570312,
+  "preflight": {
+    "ok": true,
+    "pending_count": 50,
+    "callback_attached": true,
+    "cron_in_progress": false,
+    "claims_count": 0,
+    "failures": []
+  },
+  "cron_in_progress_after": false,
+  "outcome": {
+    "pending_before": 50,
+    "pending_after": 0,
+    "drained": 50,
+    "fully_drained": true,
+    "probe_executions_observed": 50
+  },
+  "execution_contexts": {
+    "started": {
+      "Async Request": 50
+    },
+    "completed": {
+      "Async Request": 50
+    },
+    "other": {
+      "action created": 50
+    }
+  },
+  "probe_records": [
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591393.26972
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591393.493522
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591393.707391
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591393.919896
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591394.134168
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591394.348127
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591394.561169
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591394.774877
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591394.988166
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591395.203953
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591395.419847
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591395.639668
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591395.883884
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591396.100346
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591396.316765
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591396.533186
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591396.750523
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591396.968448
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591397.186979
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591397.40512
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591397.62147
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591397.837924
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591398.057648
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591398.286694
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591398.505507
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591398.723771
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591398.940901
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591399.16015
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591399.375223
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591399.605103
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591399.830075
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591400.050826
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591400.268666
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591400.489216
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591400.75841
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591400.969981
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591401.181266
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591401.407669
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591401.653027
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591401.870564
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591402.109659
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591402.338233
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591402.585047
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591402.881283
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591403.123327
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591403.350987
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591403.572504
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591403.786278
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591403.997764
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785591404.21167
+    }
+  ],
+  "canary_line": null,
+  "canary_fired": false,
+  "vector": {
+    "name": "unauthenticated-admin-ajax-async-runner",
+    "target_url": "http://localhost:8592/wp/wp-admin/admin-ajax.php?action=as_async_request_queue_runner&nonce=0d4c1f8e4a",
+    "nonce_action": "as_async_request_queue_runner",
+    "nonce_minted_as_user_id": 0,
+    "transport_error": null
+  },
+  "canary_log_writability": {
+    "path": "/var/log/wpcas/php-error.log",
+    "verified_writable": true
+  },
+  "matrix_context": {
+    "scenario_label": "async-ajax-sections-1-2-3-armed",
+    "armed_sections": [
+      1,
+      2,
+      3
+    ],
+    "disable_wp_cron": true,
+    "seed_count": 50
+  }
+}
