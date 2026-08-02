@@ -81,6 +81,13 @@ services:
       # location block pulls in -- see that file and
       # docker/nginx/fastcgi-read-timeout.conf's own comments.
       - ./docker/nginx/fastcgi-read-timeout.conf:/etc/nginx/conf.d/fastcgi-read-timeout.conf:ro
+      # Guard section 5 (issue #36 / ADR-0003): bind-mounted, not baked in,
+      # for the same reason docker/mu-plugins is above -- `bin/guard arm 5`
+      # writes the marker file on the host and nginx sees it on its very
+      # next request (the `if (-f ...)` in docker/nginx/default.conf), no
+      # reload, no restart. Read-only: nginx only ever tests this marker's
+      # presence, never writes here itself.
+      - ./docker/nginx/guard:/etc/nginx/guard:ro
 
 volumes:
   webroot:
