@@ -2,6 +2,13 @@
 
 declare( strict_types=1 );
 
+// Issue #35: `wpcas_guard_block_parse_status()` derives `post_flush_status`
+// from `post_flush_log_line` below -- also pure/no WP dependency (see that
+// file's own docblock), so requiring it here doesn't disturb this file's
+// own "plain `php`, no bootstrap" property (tests/result-record.test.php
+// only ever requires this file directly).
+require_once __DIR__ . '/guard-block.php';
+
 /**
  * Pure assembly/derivation logic for the result record (issue #4) -- the
  * unit of evidence every later ticket in this series produces. Deliberately
@@ -104,6 +111,24 @@ declare( strict_types=1 );
  * caller passed `server_observed` -- same as every prior additive field
  * (`cron_in_progress_after`, `canary_line`) never made the schema version a
  * caller-dependent choice.
+ *
+ * Additive under schema_version 4 (issue #35, same "no bump for an optional,
+ * scenario-specific field" treatment issue #10 gave `canary_line`/
+ * `canary_fired`): `post_flush_log_line` and `post_flush_status`. Guard
+ * section 1 (docker/mu-plugins-available/10-block-http-cron.php) now
+ * writes its own line -- independent of the client response and of either
+ * access log `server_observed` reads, all three of which a PHP-FPM
+ * `fastcgi_finish_request()` call can make show a 200 regardless of what
+ * this guard actually set -- recording the literal status it set before
+ * exiting. `post_flush_log_line` carries that raw line (`null` if the
+ * guard never fired), and `post_flush_status` is derived from it (the
+ * integer after `status=`, or `null` if the guard never fired or,
+ * unexpectedly, wrote a line this schema's parser can't read a status out
+ * of) -- never a separate input, same "derived, not asserted" discipline
+ * `canary_fired` already established for `canary_line`. See
+ * docker/wp-cli/lib/guard-block.php for the parsing itself, and
+ * measure-http.php for how the log is scoped to one request via a byte
+ * offset, same discipline as the canary log's callers use.
  */
 
 /**
@@ -199,6 +224,7 @@ function wpcas_result_summarize_execution_contexts( array $messages ): array {
  *     cron_in_progress_after: bool,
  *     canary_line?: string|null,
  *     server_observed?: array{web_status: int|null, fpm_status: int|null}|null,
+ *     post_flush_log_line?: string|null,
  * } $facts
  *
  * @return array<string, mixed>
@@ -221,6 +247,8 @@ function wpcas_result_record_build( array $facts ): array {
 	$canary_line = $facts['canary_line'] ?? null;
 
 	$server_observed = $facts['server_observed'] ?? null;
+
+	$post_flush_log_line = $facts['post_flush_log_line'] ?? null;
 
 	return array(
 		// Bumped 1 -> 2 (issue #4 follow-up): `command` changed from
@@ -266,5 +294,12 @@ function wpcas_result_record_build( array $facts ): array {
 		// to. The two sub-fields are themselves independently nullable --
 		// see lib/correlation.php's wpcas_correlation_find_pair().
 		'server_observed'        => $server_observed,
+		// Optional in the input facts (see the module docblock's issue #35
+		// note); always present in the output, `null` when guard section 1
+		// never fired or doesn't apply to this row.
+		'post_flush_log_line'    => $post_flush_log_line,
+		// Derived, never a separate input -- same discipline `canary_fired`
+		// already established for `canary_line`. See lib/guard-block.php.
+		'post_flush_status'      => wpcas_guard_block_parse_status( $post_flush_log_line ),
 	);
 }

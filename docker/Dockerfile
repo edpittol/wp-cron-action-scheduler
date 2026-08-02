@@ -39,6 +39,28 @@ RUN mkdir -p /var/log/wpcas \
     && touch /var/log/wpcas/php-error.log \
     && printf 'log_errors = On\nerror_log = /var/log/wpcas/php-error.log\n' > /usr/local/etc/php/conf.d/error-log.ini
 
+# Issue #35: a dedicated destination for guard section 1's own post-flush
+# self-report (docker/mu-plugins-available/10-block-http-cron.php), written
+# via error_log($message, 3, <this file>) -- the message_type=3 form, which
+# takes the file argument directly and ignores the `error_log` ini
+# directive above entirely, so this needs no php.ini wiring of its own.
+#
+# A dedicated file, not php-error.log above: this repo's FPM pool (docker/
+# php-fpm/access-log.conf's [www] section) runs request-handling workers as
+# `www-data` (the base image's own pool default), a different, unprivileged
+# user from the one that creates files during this build (root) -- a file
+# `touch`ed here and left at the default umask is root-owned and not
+# group/other-writable, so a `www-data` worker's error_log() call to it
+# fails silently (returns true; nothing lands). That gap already affects
+# php-error.log itself (nothing in this repo's evidence has been caught by
+# it yet -- every committed canary_line result predates issue #29's switch
+# to nginx + PHP-FPM -- but it is a real, latent gap, out of scope to fix
+# here). This file is `chmod`'d permissive from the moment it's created
+# specifically to not inherit that gap, since this ticket's own evidence
+# depends on the write actually landing.
+RUN touch /var/log/wpcas/guard-block.log \
+    && chmod 666 /var/log/wpcas/guard-block.log
+
 # Issue #33: the process manager's (PHP-FPM's) own access log ships
 # commented out in this base image's default pool config -- see
 # docker/php-fpm/access-log.conf's own docblock for the directives this

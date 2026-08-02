@@ -313,6 +313,46 @@ wpcas_test_assert_same(
 	$failures
 );
 
+// --- post_flush_log_line / post_flush_status (issue #35) -----------------
+//
+// Additive, backward-compatible fields: every existing caller of this
+// function (measure.php's two CLI-control rows, measure-async-ajax.php,
+// measure-admin-page-load.php, measure-manual-run.php, and measure-http.php
+// before this ticket) never passes 'post_flush_log_line' at all, so it
+// must default to null (and post_flush_status to null alongside it) rather
+// than raising a notice or being silently omitted -- same discipline as
+// canary_line/canary_fired.
+wpcas_test_assert_same( 'record without post_flush_log_line: defaults to null', null, $record['post_flush_log_line'], $failures );
+wpcas_test_assert_same( 'record without post_flush_log_line: post_flush_status defaults to null', null, $record['post_flush_status'], $failures );
+
+// The headline case this ticket exists to make provable: guard section 1
+// fired, its own log line is carried through verbatim, and post_flush_status
+// is derived from it -- 403, the status the guard set, independent of
+// whatever server_observed reports for the same request (see the
+// server_observed masking case above: this can legitimately disagree with
+// server_observed.fpm_status, not just with http_status).
+$facts_with_post_flush                        = $http_vector_facts;
+$facts_with_post_flush['post_flush_log_line'] = '[cron-guard] http entry point blocked post-flush: status=403';
+$record_with_post_flush                       = wpcas_result_record_build( $facts_with_post_flush );
+wpcas_test_assert_same(
+	'record with post_flush_log_line: passed through verbatim',
+	$facts_with_post_flush['post_flush_log_line'],
+	$record_with_post_flush['post_flush_log_line'],
+	$failures
+);
+wpcas_test_assert_same( 'record with post_flush_log_line: post_flush_status derived as 403', 403, $record_with_post_flush['post_flush_status'], $failures );
+
+// This ticket's own negative case, symmetric with canary_fired's
+// manual-run one: a record that explicitly passes post_flush_log_line as
+// null (guard section 1 disarmed, or the request never reached it) must
+// report post_flush_status === null too, not merely omit the field.
+$facts_unarmed_no_post_flush                        = $http_vector_facts;
+$facts_unarmed_no_post_flush['control']             = 'http-cron-unarmed';
+$facts_unarmed_no_post_flush['post_flush_log_line'] = null;
+$record_unarmed_no_post_flush                       = wpcas_result_record_build( $facts_unarmed_no_post_flush );
+wpcas_test_assert_same( 'unarmed row: post_flush_log_line is null', null, $record_unarmed_no_post_flush['post_flush_log_line'], $failures );
+wpcas_test_assert_same( 'unarmed row: post_flush_status is null', null, $record_unarmed_no_post_flush['post_flush_status'], $failures );
+
 if ( array() !== $failures ) {
 	fwrite( STDERR, "FAIL\n" );
 	foreach ( $failures as $failure ) {
