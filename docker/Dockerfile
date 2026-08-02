@@ -320,6 +320,22 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # criterion: "the measurement tooling stays outside the document root").
 COPY wp-cli/ /opt/wpcas-tools/
 
+# Issue #31 / ADR-0002: a second, reference-only copy of the lockfile that
+# pinned this image's build, kept alongside the tooling above -- both live
+# outside the shared webroot named volume (docker-compose.yml's
+# `webroot:/var/www/html` mount). That matters specifically because
+# docker/composer.lock is itself COPYed to ./ (i.e. /var/www/html) earlier
+# in this file, for `composer install` to consume -- a path the *same*
+# named volume also shadows. A copy read back from inside that volume
+# would be exactly as stale as the WordPress/Action Scheduler install it's
+# meant to check against; this copy, at a path the volume never touches,
+# is refreshed by every image rebuild regardless of whether the volume
+# itself gets wiped. Read back by
+# docker/wp-cli/lib/probe.php:wpcas_probe_lockfile_versions(), which
+# preflight (docker/wp-cli/preflight.php) uses to refuse measuring against
+# a stale volume instead of silently trusting it.
+COPY composer.lock /opt/wpcas-tools/composer.lock
+
 # php-fpm's default pool listens on 9000; not published to the host (only
 # nginx's port is, via docker-compose.yml), but documented here the same
 # way EXPOSE 8080 documented the old built-in server's port.

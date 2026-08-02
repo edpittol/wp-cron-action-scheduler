@@ -10,6 +10,8 @@ declare( strict_types=1 );
  *   - an attached callback
  *   - no cron-in-progress transient
  *   - an empty claims table
+ *   - the live WordPress and Action Scheduler versions match what
+ *     docker/composer.lock resolved (issue #31 / ADR-0002)
  *
  * Always emits a machine-readable snapshot of what it found -- pass or
  * fail -- "so later results can carry their own proof of validity". On

@@ -198,12 +198,13 @@ function wpcas_probe_server_config(): array {
  * The full fact set every preflight-shaped check gathers before calling
  * wpcas_preflight_evaluate() -- preflight.php itself, plus every
  * measure-*.php's own internal preflight re-check. Centralised here (issue
- * #30) so the four config facts that ticket adds are wired into every one
- * of those call sites through this single function, rather than needing
- * the same literal facts array hand-copied into six files (the exact
- * "disagreeing copies" trap this ticket's own acceptance criteria warns
- * against for the pool size specifically, generalised here to every call
- * site rather than just every config value).
+ * #30) so the four config facts that ticket adds, and (issue #31) the four
+ * live-vs-lockfile version facts, are wired into every one of those call
+ * sites through this single function, rather than needing the same literal
+ * facts array hand-copied into six files (the exact "disagreeing copies"
+ * trap this ticket's own acceptance criteria warns against for the pool
+ * size specifically, generalised here to every call site rather than just
+ * every config value).
  *
  * @return array{
  *     pending_count: int,
@@ -214,9 +215,15 @@ function wpcas_probe_server_config(): array {
  *     max_execution_time_seconds: int|null,
  *     request_terminate_timeout_seconds: int|null,
  *     fastcgi_read_timeout_seconds: int|null,
+ *     wp_version: string,
+ *     wp_version_lockfile: string,
+ *     action_scheduler_version: string,
+ *     action_scheduler_version_lockfile: string,
  * }
  */
 function wpcas_probe_gather_preflight_facts(): array {
+	$lockfile_versions = wpcas_probe_lockfile_versions();
+
 	return array_merge(
 		array(
 			'pending_count'     => wpcas_probe_pending_count(),
@@ -224,8 +231,100 @@ function wpcas_probe_gather_preflight_facts(): array {
 			'cron_in_progress'  => wpcas_probe_cron_in_progress(),
 			'claims_count'      => wpcas_probe_claims_count(),
 		),
-		wpcas_probe_server_config()
+		wpcas_probe_server_config(),
+		array(
+			'wp_version'                        => wpcas_probe_wp_version(),
+			'wp_version_lockfile'               => $lockfile_versions['wordpress'],
+			'action_scheduler_version'          => wpcas_probe_action_scheduler_version(),
+			'action_scheduler_version_lockfile' => $lockfile_versions['action_scheduler'],
+		)
 	);
+}
+
+/**
+ * Path to the reference copy of docker/composer.lock that pinned this
+ * image's build (issue #31 / ADR-0002), kept alongside the measurement
+ * tooling at /opt/wpcas-tools -- outside the shared webroot named volume
+ * (docker-compose.yml's `webroot:/var/www/html` mount, which is what
+ * wpcas_probe_wp_version() and wpcas_probe_action_scheduler_version()
+ * below read the *live* versions out of). That volume is populated once,
+ * on first start, from whatever the image contained at that path -- a
+ * later image rebuild after bumping docker/composer.lock does not reach
+ * an already-existing volume, and composer.lock itself lives under
+ * /var/www/html too, so a copy read from *inside* the volume would be
+ * exactly as stale as the WordPress/Action Scheduler install it's meant
+ * to check. This second copy, at a path the volume never shadows, is
+ * refreshed by every image rebuild regardless -- see
+ * docker/Dockerfile's own comment on this COPY.
+ */
+const WPCAS_COMPOSER_LOCKFILE_PATH = '/opt/wpcas-tools/composer.lock';
+
+/**
+ * The live WordPress version, as WordPress core itself reports it.
+ */
+function wpcas_probe_wp_version(): string {
+	global $wp_version;
+
+	return (string) $wp_version;
+}
+
+/**
+ * The live Action Scheduler version. Same accessor already documented in
+ * the README and used by
+ * docker/mu-plugins-available/90-unhook-timing-probe.php to read Action
+ * Scheduler's version back from a live request.
+ */
+function wpcas_probe_action_scheduler_version(): string {
+	return class_exists( 'ActionScheduler_Versions' )
+		? (string) ActionScheduler_Versions::instance()->latest_version()
+		: '';
+}
+
+/**
+ * The WordPress and Action Scheduler versions docker/composer.lock
+ * resolved at image-build time, read back from the reference copy at
+ * WPCAS_COMPOSER_LOCKFILE_PATH (see that constant's own docblock for why
+ * that path, specifically, is the one copy of composer.lock guaranteed
+ * not to be stale).
+ *
+ * @return array{wordpress: string, action_scheduler: string}
+ */
+function wpcas_probe_lockfile_versions(): array {
+	if ( ! is_readable( WPCAS_COMPOSER_LOCKFILE_PATH ) ) {
+		WP_CLI::error( sprintf( 'Reference composer.lock not found or unreadable at %s.', WPCAS_COMPOSER_LOCKFILE_PATH ) );
+	}
+
+	$decoded = json_decode( (string) file_get_contents( WPCAS_COMPOSER_LOCKFILE_PATH ), true );
+
+	if ( ! is_array( $decoded ) || ! isset( $decoded['packages'] ) || ! is_array( $decoded['packages'] ) ) {
+		WP_CLI::error( sprintf( '%s did not decode to a valid Composer lockfile.', WPCAS_COMPOSER_LOCKFILE_PATH ) );
+	}
+
+	$package_map = array(
+		'johnpbloch/wordpress-core'          => 'wordpress',
+		'wpackagist-plugin/action-scheduler' => 'action_scheduler',
+	);
+
+	$versions = array(
+		'wordpress'        => null,
+		'action_scheduler' => null,
+	);
+
+	foreach ( $decoded['packages'] as $package ) {
+		if ( ! isset( $package['name'], $package['version'], $package_map[ $package['name'] ] ) ) {
+			continue;
+		}
+
+		$versions[ $package_map[ $package['name'] ] ] = (string) $package['version'];
+	}
+
+	foreach ( $versions as $name => $version ) {
+		if ( null === $version ) {
+			WP_CLI::error( sprintf( "%s did not resolve a version for '%s'.", WPCAS_COMPOSER_LOCKFILE_PATH, $name ) );
+		}
+	}
+
+	return $versions;
 }
 
 /**
