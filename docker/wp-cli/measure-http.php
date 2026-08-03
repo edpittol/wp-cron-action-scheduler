@@ -54,6 +54,15 @@ declare( strict_types=1 );
  * Invoked via `bin/stack measure-http <label>`, which captures this
  * script's stdout (the JSON record, and nothing else) to a file under
  * results/, same contract as `bin/stack measure`.
+ *
+ * Issue #33: this request also carries a unique `X-Wpcas-Request-Id`
+ * header, so the status nginx and PHP-FPM each independently recorded for
+ * it (docker/nginx/default.conf's `wpcas` log_format;
+ * docker/php-fpm/access-log.conf's `access.format`) can be read back and
+ * correlated by that id (lib/correlation.php) into the record's
+ * `server_observed` field -- evidence sourced from the server side,
+ * independent of `http_status` (the client's own report of what it read
+ * off the wire).
  */
 
 require __DIR__ . '/lib/probe.php';
@@ -61,6 +70,16 @@ require __DIR__ . '/lib/preflight-assertions.php';
 require __DIR__ . '/lib/result-record.php';
 require __DIR__ . '/lib/http-status.php';
 require __DIR__ . '/lib/internal-loopback.php';
+require __DIR__ . '/lib/correlation.php';
+
+// Issue #33: nginx's own access log, shared into this container read-only
+// via the `nginx-access-log` volume (docker-compose.yml) -- this script
+// runs inside the php-fpm container (via `wp eval-file`), a separate
+// Compose service from nginx (issue #29), so it cannot read that file any
+// other way. PHP-FPM's own access log needs no such sharing: it's written
+// locally, by this same container's PHP-FPM master process.
+const WPCAS_NGINX_ACCESS_LOG = '/var/log/wpcas-nginx/access.log';
+const WPCAS_PHP_FPM_ACCESS_LOG = '/var/log/wpcas/php-fpm-access.log';
 
 /** @var array<int, string> $args Positional args from `wp eval-file`. */
 $control = $args[0] ?? 'http-wp-cron';
@@ -138,12 +157,25 @@ $action_ids     = wpcas_probe_pending_action_ids();
 $loopback = wpcas_internal_loopback_rewrite( site_url( 'wp-cron.php' ) );
 $url      = $loopback['url'];
 
+// Issue #33: a unique id for this one request, sent as its own header
+// (below) and independently recorded by both the web server and the
+// process manager against their own status (docker/nginx/default.conf's
+// `wpcas` log_format; docker/php-fpm/access-log.conf's `access.format`) --
+// this is what makes the two access-log lines this run produces
+// attributable to *this* request, rather than merely "the most recent
+// one" (see lib/correlation.php's own docblock for why that distinction
+// matters once more than one request's lines are ever in play).
+// wp_generate_uuid4() (core, wp-includes/functions.php): already available
+// in this WP-CLI bootstrap, no new dependency.
+$request_id = wp_generate_uuid4();
+
 fwrite(
 	STDERR,
 	sprintf(
-		"Preflight passed. Issuing unauthenticated GET %s (Host: %s) against %d pending action(s)...\n",
+		"Preflight passed. Issuing unauthenticated GET %s (Host: %s, X-Wpcas-Request-Id: %s) against %d pending action(s)...\n",
 		$url,
 		$loopback['host_header'],
+		$request_id,
 		$pending_before
 	)
 );
@@ -164,7 +196,7 @@ $context = stream_context_create(
 	array(
 		'http' => array(
 			'method'        => 'GET',
-			'header'        => "Host: {$loopback['host_header']}\r\n",
+			'header'        => "Host: {$loopback['host_header']}\r\nX-Wpcas-Request-Id: {$request_id}\r\n",
 			'timeout'       => 120,
 			'ignore_errors' => true,
 		),
@@ -240,6 +272,41 @@ fwrite(
 	sprintf( "cron-in-progress (\"doing_cron\") transient after this request: %s\n", $cron_in_progress_after ? 'true' : 'false' )
 );
 
+// --- Correlate the server-side evidence (issue #33) -----------------------
+//
+// By now the settle poll above has confirmed the queue has stopped moving,
+// which also means wp-cron.php's own post-flush processing (the whole
+// reason a settle poll is needed at all -- see that section's docblock)
+// has actually finished, and with it PHP-FPM's own access-log line for
+// this request -- PHP-FPM logs a request only once it has fully finished
+// executing, not when fastcgi_finish_request() flushed the response --
+// should already be on disk.
+//
+// file() on a not-yet-existing path (e.g. a fresh volume before nginx's
+// very first request, or an access.log PHP-FPM hasn't opened yet) returns
+// false; both are read with @ and normalised to an empty array below,
+// rather than this script warning or aborting over evidence that is
+// recorded when available, not required to trust the outcome itself (this
+// ticket's own scope -- see lib/result-record.php's module docblock).
+$web_lines = @file( WPCAS_NGINX_ACCESS_LOG, FILE_IGNORE_NEW_LINES ); // phpcs:ignore WordPress.PHP.NoSilencedErrors -- missing file handled explicitly below, not masked.
+$fpm_lines = @file( WPCAS_PHP_FPM_ACCESS_LOG, FILE_IGNORE_NEW_LINES ); // phpcs:ignore WordPress.PHP.NoSilencedErrors -- same as above.
+
+$server_observed = wpcas_correlation_find_pair(
+	$request_id,
+	false === $web_lines ? array() : $web_lines,
+	false === $fpm_lines ? array() : $fpm_lines
+);
+
+fwrite(
+	STDERR,
+	sprintf(
+		"Server-observed status for request id %s -- web (nginx): %s, process manager (PHP-FPM): %s.\n",
+		$request_id,
+		null === $server_observed['web_status'] ? '(none found)' : (string) $server_observed['web_status'],
+		null === $server_observed['fpm_status'] ? '(none found)' : (string) $server_observed['fpm_status']
+	)
+);
+
 $record = wpcas_result_record_build(
 	array(
 		'control'                => $control,
@@ -257,6 +324,7 @@ $record = wpcas_result_record_build(
 		'log_messages'           => $log_messages,
 		'probe_records'          => $probe_records,
 		'cron_in_progress_after' => $cron_in_progress_after,
+		'server_observed'        => $server_observed,
 	)
 );
 
