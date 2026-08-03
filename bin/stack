@@ -36,6 +36,8 @@
 #                                        # container with a new env value, no
 #                                        # image rebuild
 #   bin/stack occupancy [count]         # measure worker occupancy during a drain (issue #9)
+#   bin/stack measure-fastcgi-isolation # drive the isolated fastcgi_finish_request()
+#                                        # proof files (issue #34), write a result record
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -88,10 +90,10 @@ compose() {
 # then fires concurrent GET / requests against this stack's own published
 # port at increasing concurrency levels while polling the drain's own
 # pending count out-of-band (via wp-cli, never over HTTP, so polling itself
-# never consumes one of the php-cli-server workers being measured). Prints
+# never consumes one of the PHP-FPM pool children being measured). Prints
 # the finished JSON record from docker/wp-cli/lib/occupancy-assertions.php
 # (via bin/occupancy-report.php), which names the server model explicitly
-# so the figures can never be misread as PHP-FPM.
+# as PHP-FPM, the only server model this repo's stack runs (issue #37).
 #
 # Concurrency levels deliberately bracket the worker pool: below, at, and
 # (twice) above PHP_CLI_SERVER_WORKERS, so a run can show latency staying
@@ -120,7 +122,7 @@ occupancy_curl_wave() {
 }
 
 # Polled via a plain wp-cli process (CLI SAPI), not over HTTP -- so polling
-# never competes with the front-end requests for a php-cli-server worker.
+# never competes with the front-end requests for a PHP-FPM pool child.
 occupancy_pending_count() {
     compose exec -T php-fpm wp eval-file --use-include /opt/wpcas-tools/pending-count.php --allow-root 2>/dev/null | tail -1
 }
@@ -148,27 +150,32 @@ run_occupancy() {
     local count="${1:-50}"
 
     # Both sub-commands' own stdout (WP_CLI::log()/success() output, and
-    # preflight's own JSON snapshot) is redirected to stderr here, not
-    # suppressed: `bin/stack occupancy`'s stdout is reserved for exactly one
-    # JSON value, the final record, so it stays pipeable/parseable (e.g.
-    # `bin/stack occupancy 50 > record.json`) the same way `preflight` alone
-    # already is.
+    # preflight's own JSON snapshot) is echoed to stderr here (not
+    # suppressed -- `bin/stack occupancy`'s own stdout is reserved for
+    # exactly one JSON value, the final record, so it stays pipeable/
+    # parseable, e.g. `bin/stack occupancy 50 > record.json`, the same way
+    # `preflight` alone already is), but preflight's snapshot is ALSO kept
+    # in $preflight_output below to read pool_max_children back out of it.
     echo "== occupancy: reset ${count} (due-now) ==" >&2
     compose exec -T php-fpm wp eval-file --use-include /opt/wpcas-tools/reset.php "$count" due-now --allow-root >&2
 
     echo "== occupancy: preflight ==" >&2
-    compose exec -T php-fpm wp eval-file --use-include /opt/wpcas-tools/preflight.php --allow-root >&2
+    local preflight_output
+    preflight_output="$(compose exec -T php-fpm wp eval-file --use-include /opt/wpcas-tools/preflight.php --allow-root)"
+    echo "$preflight_output" >&2
 
-    # Issue #29: PHP_CLI_SERVER_WORKERS no longer exists (it was the
-    # built-in server's own worker-pool env var, deleted along with
-    # php -S itself) -- printenv now always fails to find it, which would
-    # otherwise abort this whole script under `set -e -o pipefail`. The
-    # `|| true` below restores the fallback-to-1 this line already
-    # intended for that case; php-fpm's actual pool size (and reporting
-    # it accurately here instead of this placeholder) is out of scope for
-    # this ticket -- see the occupancy-relabelling ticket.
+    # Issue #30 pinned php-fpm's pool to a *static* `pm.max_children` (see
+    # docker/Dockerfile's zz-wpcas-pool.conf) and started surfacing it as
+    # `pool_max_children` in every preflight snapshot (docker/wp-cli/lib/
+    # probe.php, docker/wp-cli/lib/server-config.php) -- read it back from
+    # the preflight run just above rather than PHP_CLI_SERVER_WORKERS, the
+    # built-in server's own worker-pool env var, which no longer exists
+    # (deleted along with `php -S` itself in issue #29). Falls back to 1
+    # only if the field is somehow absent (e.g. an unreadable pool conf
+    # file), matching this script's pre-#37 placeholder behaviour for that
+    # edge case rather than reporting a workers_total of 0.
     local workers_total
-    workers_total="$(compose exec -T php-fpm printenv PHP_CLI_SERVER_WORKERS 2>/dev/null | tr -d '\r\n' || true)"
+    workers_total="$(printf '%s' "$preflight_output" | grep -o '"pool_max_children"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]*$' || true)"
     [ -n "$workers_total" ] || workers_total=1
 
     echo "== occupancy: baseline waves (no drain in flight, workers_total=${workers_total}) ==" >&2
@@ -222,7 +229,7 @@ run_occupancy() {
     done
 
     jq -n \
-        --arg server_model "php-cli-server" \
+        --arg server_model "nginx + php-fpm" \
         --argjson workers_total "$workers_total" \
         --arg trigger_url "http://localhost:${STACK_PORT}/wp/wp-admin/index.php" \
         --argjson trigger_response_seconds "$trigger_time" \
@@ -396,6 +403,33 @@ case "$cmd" in
             exit "$rc"
         fi
         ;;
+    measure-fastcgi-isolation)
+        # Issue #34: drives docker/fastcgi-isolation/flush-then-status.php
+        # and status-then-flush.php with one request each and writes a
+        # single result record. Plain `php`, not `wp eval-file`, unlike
+        # every other measure-* subcommand above -- see
+        # docker/wp-cli/measure-fastcgi-isolation.php's own docblock for
+        # why this one script needs no WordPress bootstrap at all. No
+        # per-run label/scenario argument: this is one fixed proof, not a
+        # vector measured across guard combinations, so the output
+        # filename carries no label -- same file/temp-file/mv discipline
+        # as every other `measure*` subcommand above regardless.
+        mkdir -p "$RESULTS_DIR"
+        outfile="$RESULTS_DIR/$(date -u +%Y%m%dT%H%M%SZ)-fastcgi-isolation.json"
+        tmpfile="$(mktemp "${outfile}.XXXXXX.tmp")"
+        rc=0
+        compose exec -T php-fpm php /opt/wpcas-tools/measure-fastcgi-isolation.php > "$tmpfile" || rc=$?
+        if [ "$rc" -eq 0 ]; then
+            mv "$tmpfile" "$outfile"
+            echo "" >&2
+            echo "Result record written to ${outfile}" >&2
+        else
+            rm -f "$tmpfile"
+            echo "" >&2
+            echo "measure-fastcgi-isolation.php exited ${rc} -- no result record written (see the diagnostics above)." >&2
+            exit "$rc"
+        fi
+        ;;
     set-disable-wp-cron)
         # Issue #5: flips the DISABLE_WP_CRON constant without rebuilding
         # the image. wp-config.php (docker/Dockerfile) reads this env var
@@ -420,7 +454,7 @@ case "$cmd" in
         run_occupancy "$@"
         ;;
     *)
-        echo "Usage: $(basename "$0") {up|down|shell|exec|seed|reset|preflight|measure|measure-http|measure-async-ajax|measure-admin-page-load|measure-manual-run|set-disable-wp-cron|occupancy} [args...]" >&2
+        echo "Usage: $(basename "$0") {up|down|shell|exec|seed|reset|preflight|measure|measure-http|measure-async-ajax|measure-admin-page-load|measure-manual-run|measure-fastcgi-isolation|set-disable-wp-cron|occupancy} [args...]" >&2
         echo "  up                    build and start the stack" >&2
         echo "  down                  stop and remove the stack" >&2
         echo "  shell                 open a shell in the php-fpm container" >&2
@@ -440,6 +474,9 @@ case "$cmd" in
         echo "  measure-manual-run <scenario-label>" >&2
         echo "                        authenticated manual 'Run' click from the Scheduled" >&2
         echo "                        Actions admin screen, write a result record" >&2
+        echo "  measure-fastcgi-isolation" >&2
+        echo "                        drive the isolated fastcgi_finish_request() proof files" >&2
+        echo "                        (issue #34), write a result record" >&2
         echo "  set-disable-wp-cron <true|false>" >&2
         echo "                        flip DISABLE_WP_CRON at runtime, no rebuild" >&2
         echo "  occupancy [count]     measure worker occupancy during a drain (issue #9)" >&2

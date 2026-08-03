@@ -160,7 +160,7 @@ set_disable_wp_cron() {
 # never got a chance to run against a dispatch chain that started before
 # it was armed. Polling the pending count out-of-band (via wp-cli, never
 # HTTP, so this never competes with the thing being measured for a
-# php-cli-server worker) for three consecutive equal reads, 3s apart,
+# PHP-FPM pool child) for three consecutive equal reads, 3s apart,
 # before letting the NEXT scenario's reset run, gives such a chain a
 # generous bounded window to actually finish -- not a fabrication of any
 # figure, just waiting for real background work already in flight to
@@ -574,6 +574,28 @@ run_scenario http-cron-unarmed "" true "$STACK" measure-http http-cron-unarmed
 run_scenario http-cron-armed "1" true "$STACK" measure-http http-cron-armed
 wait_for_action_scheduler_cron_due
 run_scenario http-cron-armed-cron-enabled "1" false "$STACK" measure-http http-cron-armed-cron-enabled
+set_disable_wp_cron true
+
+# Issue #36 / ADR-0003: guard section 5 blocks the same entry point one
+# layer earlier, at nginx, before PHP (and therefore WP-Cron's own due-time
+# check) ever runs -- so, like http-cron-armed above, neither of these two
+# scenarios needs wait_for_action_scheduler_cron_due first; the block never
+# depends on the queue-runner event's own timing.
+#
+# http-cron-nginx-armed is section 5's counterpart to http-cron-armed: an
+# observable 403, zero drained.
+run_scenario http-cron-nginx-armed "5" true "$STACK" measure-http http-cron-nginx-armed
+
+# http-cron-nginx-armed-cron-enabled is the committed counter-example ADR-
+# 0003 exists to make measurable: section 5 cannot read the DISABLE_WP_CRON
+# PHP constant, so it stays unconditional even with disable_wp_cron=false --
+# unlike http-cron-armed-cron-enabled above (section 1, which DOES honour
+# the fleet caveat and lets this same request through once cron is enabled),
+# this request is still 403'd. That is not a bug being demonstrated -- it is
+# the trade-off itself: a fleet-safe site that genuinely depends on the web
+# loopback loses cron entirely once section 5 is armed, with nothing left to
+# drain it.
+run_scenario http-cron-nginx-armed-cron-enabled "5" false "$STACK" measure-http http-cron-nginx-armed-cron-enabled
 set_disable_wp_cron true
 
 run_scenario async-ajax-unarmed "" true "$STACK" measure-async-ajax async-ajax-unarmed

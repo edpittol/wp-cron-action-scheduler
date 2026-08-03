@@ -70,6 +70,77 @@ RUN touch /var/log/wpcas/guard-block.log \
 # -- everything else that pool's default already set is untouched.
 COPY php-fpm/access-log.conf /usr/local/etc/php-fpm.d/zz-wpcas-access-log.conf
 
+# --- Issue #30: pin the worker pool and every relevant timeout ------------
+#
+# The base image loads no php.ini at all (see the memory_limit/error_log
+# overrides above -- both exist for the same reason: without an explicit
+# ini file, this stack would be silently running on whatever the compiled-in
+# defaults happen to be). PHP-FPM's pool defaults matter here more than most:
+# `pm = dynamic` with `pm.max_children = 5` is a different worker count than
+# the 6-worker pool the retired php-cli-server model used (see
+# docs/blog-post-draft.md's PHP_CLI_SERVER_WORKERS=6), which would make any
+# later occupancy comparison against that retired model silently compare two
+# differently-sized pools. Pinned to a *static* pool of 6 workers instead --
+# matching that retired count exactly, and static (not dynamic) so "6" is
+# the actual, unconditional number of workers this pool ever runs, not a
+# ceiling three other pm.* directives could keep it under.
+#
+# request_terminate_timeout (PHP-FPM's own hard kill for a worker that has
+# run longer than this many seconds, independent of PHP's own
+# max_execution_time below) is left commented-out/disabled (0) by the base
+# image -- as unbounded as the retired built-in server's own request handling
+# was. Pinned explicitly here rather than left at that implicit "still
+# unbounded" default.
+#
+# Named with a 'zz-' prefix (rather than editing /usr/local/etc/php-fpm.d/
+# www.conf in place) so this file sorts, and therefore loads, after both
+# the base image's own `docker.conf` and `www.conf` in php-fpm.d's default
+# `include=*.conf` glob -- FPM merges same-named `[www]` pool sections
+# across included files rather than erroring on the repeat (the base image's
+# own docker.conf already relies on this same merge behaviour to set
+# `listen`, a directive www.conf itself never sets), so this file's two
+# directives are guaranteed to win over either base file's own values for
+# the same pool. docker/wp-cli/lib/probe.php reads this exact file back
+# (never a second, separately-maintained copy of "6"/"35") to carry both
+# values into every preflight snapshot and therefore every result record.
+RUN printf '[www]\npm = static\npm.max_children = 6\nrequest_terminate_timeout = 35\n' \
+        > /usr/local/etc/php-fpm.d/zz-wpcas-pool.conf
+
+# PHP's own execution-time ceiling. Left unset, PHP-FPM's request-handling
+# workers sit at the compiled-in default of 30 seconds -- an execution
+# ceiling that did not exist under the retired built-in server, which
+# inherited an *unlimited* one (php's cli-server SAPI overrides
+# max_execution_time to 0; see docker/wp-cli/lib/server-config.php's module
+# docblock for the equivalent override this same base image's `php` CLI
+# binary applies). That is a real behaviour change this
+# server-model swap (issue #27/#29) already introduced, not something this
+# line changes -- but it was, until now, an implicit one nowhere a reader
+# could find it stated. Pinning it here at that same 30-second figure
+# changes nothing about how the stack actually behaves; it only turns an
+# already-latent ceiling into a known, explicit, and (via
+# docker/wp-cli/lib/probe.php) recorded quantity.
+#
+# `ini_get('max_execution_time')` cannot read this back, despite being a
+# genuine php.ini directive: PHP's CLI SAPI -- what every `wp eval-file`
+# invocation runs as, preflight included -- unconditionally resets
+# max_execution_time to 0 after ini parsing, regardless of what this file
+# sets it to (confirmed directly against this same base image while building
+# this). docker/wp-cli/lib/server-config.php's module docblock has the full
+# story; docker/wp-cli/lib/probe.php reads this file's own bytes back
+# instead, for exactly that reason.
+RUN printf 'max_execution_time = 30\n' > /usr/local/etc/php/conf.d/execution-time.ini
+
+# Issue #34's isolation proof files (COPY'd below, once the document root
+# exists) both write to this dedicated log, independent of the php-error
+# log above, so their server-side "post-flush status" record is never
+# mixed in with PHP's own deprecation/warning noise the way parsing that
+# log (lib/canary.php) has to allow for. chmod 666: both proof files run
+# as php-fpm's pool user (www-data, the base image's default), not the
+# root this RUN step executes as, so the file needs to be writable by a
+# different, non-owning user from the moment it's created.
+RUN touch /var/log/wpcas/fastcgi-isolation.log \
+    && chmod 666 /var/log/wpcas/fastcgi-isolation.log
+
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         unzip \
@@ -246,6 +317,20 @@ RUN mkdir -p wp/wp-content/mu-plugins
 # mount) -- kept for that case, not because it does anything under the
 # normal `bin/stack up` path.
 COPY mu-plugins/wpcas-poc-probe.php /var/www/html/wp/wp-content/mu-plugins/wpcas-poc-probe.php
+
+# Issue #34: the two-file fastcgi_finish_request() isolation proof,
+# placed directly at the document root (not nested under /wp, and not in
+# a subdirectory of their own) -- deliberately web-reachable and
+# independent of WordPress (see the two files' own docblocks, and this
+# repo's README "Caveats" section for why that's a documented trade-off
+# rather than an oversight). Not shadowed by any bind mount, unlike
+# mu-plugins above -- these two files are static and never need runtime
+# editing the way guard sections do. Source files live under
+# docker/fastcgi-isolation/ in this repo only for tidiness; nothing about
+# that source-side grouping carries over to where they land in the image.
+COPY fastcgi-isolation/flush-then-status.php /var/www/html/flush-then-status.php
+COPY fastcgi-isolation/status-then-flush.php /var/www/html/status-then-flush.php
+
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
@@ -259,6 +344,22 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # move to a Composer-provisioned /wp layout (issue #29 acceptance
 # criterion: "the measurement tooling stays outside the document root").
 COPY wp-cli/ /opt/wpcas-tools/
+
+# Issue #31 / ADR-0002: a second, reference-only copy of the lockfile that
+# pinned this image's build, kept alongside the tooling above -- both live
+# outside the shared webroot named volume (docker-compose.yml's
+# `webroot:/var/www/html` mount). That matters specifically because
+# docker/composer.lock is itself COPYed to ./ (i.e. /var/www/html) earlier
+# in this file, for `composer install` to consume -- a path the *same*
+# named volume also shadows. A copy read back from inside that volume
+# would be exactly as stale as the WordPress/Action Scheduler install it's
+# meant to check against; this copy, at a path the volume never touches,
+# is refreshed by every image rebuild regardless of whether the volume
+# itself gets wiped. Read back by
+# docker/wp-cli/lib/probe.php:wpcas_probe_lockfile_versions(), which
+# preflight (docker/wp-cli/preflight.php) uses to refuse measuring against
+# a stale volume instead of silently trusting it.
+COPY composer.lock /opt/wpcas-tools/composer.lock
 
 # php-fpm's default pool listens on 9000; not published to the host (only
 # nginx's port is, via docker-compose.yml), but documented here the same
