@@ -82,6 +82,28 @@ declare( strict_types=1 );
  * schema function, so they are not enumerated in the @param/@return shapes
  * below, but they are still real, additive record fields and #10's report
  * renders them where present.
+ *
+ * schema_version 3 -> 4 (issue #33): added `server_observed`, the status
+ * the *server* recorded for a measured request -- independently sourced
+ * from the client's own report already carried in `http_status`, and tied
+ * to the exact request via the `X-Wpcas-Request-Id` header that request
+ * sent (see measure-http.php and lib/correlation.php). It carries the web
+ * server's (nginx) and process manager's (PHP-FPM) own observed statuses
+ * as `web_status`/`fpm_status`, either independently null when no matching
+ * access-log line was found for that source. `server_observed` itself is
+ * always present (never omitted) and independently nullable -- null as a
+ * whole for any row this ticket's correlation doesn't apply to (e.g. a
+ * CLI-control row, which never had a request id to correlate on), the same
+ * "always present, independently nullable" discipline `http_status`/
+ * `command` already established. Optional in the input facts (defaults to
+ * null via the same `?? null` pattern as `canary_line`), so every existing
+ * caller that never passes it keeps working unchanged.
+ *
+ * There is no dual-version record support: every record this function
+ * builds is schema_version 4, unconditionally, regardless of whether the
+ * caller passed `server_observed` -- same as every prior additive field
+ * (`cron_in_progress_after`, `canary_line`) never made the schema version a
+ * caller-dependent choice.
  */
 
 /**
@@ -176,6 +198,7 @@ function wpcas_result_summarize_execution_contexts( array $messages ): array {
  *     probe_records: array<int, array{sapi: string, pid: int, timestamp: float}>,
  *     cron_in_progress_after: bool,
  *     canary_line?: string|null,
+ *     server_observed?: array{web_status: int|null, fpm_status: int|null}|null,
  * } $facts
  *
  * @return array<string, mixed>
@@ -197,6 +220,8 @@ function wpcas_result_record_build( array $facts ): array {
 
 	$canary_line = $facts['canary_line'] ?? null;
 
+	$server_observed = $facts['server_observed'] ?? null;
+
 	return array(
 		// Bumped 1 -> 2 (issue #4 follow-up): `command` changed from
 		// always-present to nullable, to accommodate the HTTP-vector row
@@ -206,7 +231,10 @@ function wpcas_result_record_build( array $facts ): array {
 		// Issue #10 reconciled #6/#7's `canary_line`/`canary_fired` into
 		// this same schema_version 3 -- additive fields, no further bump
 		// (see the module docblock and issue #10's `## Decisions`).
-		'schema_version'         => 3,
+		// Bumped 3 -> 4 (issue #33): added `server_observed` (see the
+		// module docblock's schema_version 3 -> 4 note). No dual-version
+		// record support -- every record built here is schema_version 4.
+		'schema_version'         => 4,
 		'control'                => $facts['control'],
 		'command'                => $command,
 		// Always present (never omitted), independent of `command` -- see
@@ -232,5 +260,11 @@ function wpcas_result_record_build( array $facts ): array {
 		// why this is still carried as its own boolean rather than left
 		// for a reader to infer from `canary_line`'s nullability.
 		'canary_fired'           => null !== $canary_line,
+		// Optional in the input facts (see the module docblock's
+		// schema_version 3 -> 4 note); always present in the output, `null`
+		// as a whole for any row this ticket's correlation doesn't apply
+		// to. The two sub-fields are themselves independently nullable --
+		// see lib/correlation.php's wpcas_correlation_find_pair().
+		'server_observed'        => $server_observed,
 	);
 }

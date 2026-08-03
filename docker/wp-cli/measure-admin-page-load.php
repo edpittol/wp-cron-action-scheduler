@@ -79,6 +79,7 @@ declare( strict_types=1 );
  * file under results/, same contract as `bin/stack measure`.
  */
 
+require __DIR__ . '/lib/server-config.php';
 require __DIR__ . '/lib/probe.php';
 require __DIR__ . '/lib/preflight-assertions.php';
 require __DIR__ . '/lib/result-record.php';
@@ -126,13 +127,8 @@ fwrite( STDERR, "Canary log destination '{$canary_log_path}' verified writable (
 
 // --- Preflight (same facts/evaluation as preflight.php/measure.php) -----
 
-$preflight_facts = array(
-	'pending_count'     => wpcas_probe_pending_count(),
-	'callback_attached' => wpcas_probe_callback_attached(),
-	'cron_in_progress'  => wpcas_probe_cron_in_progress(),
-	'claims_count'      => wpcas_probe_claims_count(),
-);
-$preflight = wpcas_preflight_evaluate( $preflight_facts );
+$preflight_facts = wpcas_probe_gather_preflight_facts();
+$preflight       = wpcas_preflight_evaluate( $preflight_facts );
 
 fwrite( STDERR, wp_json_encode( $preflight['snapshot'], JSON_PRETTY_PRINT ) . "\n" );
 
@@ -183,6 +179,17 @@ fwrite(
 // admin screen would exercise the same is_admin()-gated dispatch check
 // (see this file's own docblock), this one is just a plain, fast choice.
 $target_url = admin_url( 'plugins.php' );
+
+// Issue #29: admin_url() resolves against WP_SITEURL, "localhost:$STACK_PORT"
+// -- correct for a real external client, but nginx (not this php-fpm
+// container) is what actually listens there now, on a separate Compose
+// service. This works anyway: docker/mu-plugins/wpcas-internal-loopback-resolve.php
+// transparently redirects the *connection* (not the Host header WordPress
+// still sends) to nginx for any loopback built from this site's own
+// siteurl -- the same fix Action Scheduler's own internal async-dispatch
+// loopback needs and gets, since this repo can't edit that vendored code
+// directly (and this scenario's whole point is that dispatch actually
+// firing from this page load). Nothing below needs to know any of that.
 
 // Byte offset into the canary log *before* the request, so the canary-line
 // read afterwards is scoped to this run only.
