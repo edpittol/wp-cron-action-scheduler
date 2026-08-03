@@ -10,6 +10,8 @@ declare( strict_types=1 );
  *   - an attached callback
  *   - no cron-in-progress transient
  *   - an empty claims table
+ *   - the live WordPress and Action Scheduler versions match what
+ *     docker/composer.lock resolved (issue #31 / ADR-0002)
  *
  * Always emits a machine-readable snapshot of what it found -- pass or
  * fail -- "so later results can carry their own proof of validity". On
@@ -24,11 +26,17 @@ declare( strict_types=1 );
 require __DIR__ . '/lib/probe.php';
 require __DIR__ . '/lib/preflight-assertions.php';
 
+$lockfile_versions = wpcas_probe_lockfile_versions();
+
 $facts = array(
-	'pending_count'     => wpcas_probe_pending_count(),
-	'callback_attached' => wpcas_probe_callback_attached(),
-	'cron_in_progress'  => wpcas_probe_cron_in_progress(),
-	'claims_count'      => wpcas_probe_claims_count(),
+	'pending_count'                     => wpcas_probe_pending_count(),
+	'callback_attached'                 => wpcas_probe_callback_attached(),
+	'cron_in_progress'                  => wpcas_probe_cron_in_progress(),
+	'claims_count'                      => wpcas_probe_claims_count(),
+	'wp_version'                        => wpcas_probe_wp_version(),
+	'wp_version_lockfile'               => $lockfile_versions['wordpress'],
+	'action_scheduler_version'          => wpcas_probe_action_scheduler_version(),
+	'action_scheduler_version_lockfile' => $lockfile_versions['action_scheduler'],
 );
 
 $result = wpcas_preflight_evaluate( $facts );
