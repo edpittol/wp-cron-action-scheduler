@@ -1,0 +1,338 @@
+{
+  "schema_version": 4,
+  "control": "admin-page-load:admin-page-load-unarmed",
+  "command": null,
+  "http_status": 200,
+  "started_at": "2026-08-02T15:27:48+00:00",
+  "finished_at": "2026-08-02T15:28:01+00:00",
+  "elapsed_seconds": 12.356228113174438,
+  "preflight": {
+    "ok": true,
+    "pending_count": 50,
+    "callback_attached": true,
+    "cron_in_progress": false,
+    "claims_count": 0,
+    "pool_max_children": 6,
+    "max_execution_time_seconds": 30,
+    "request_terminate_timeout_seconds": 35,
+    "fastcgi_read_timeout_seconds": 40,
+    "wp_version": "7.0.2",
+    "wp_version_lockfile": "7.0.2",
+    "action_scheduler_version": "4.0.0",
+    "action_scheduler_version_lockfile": "4.0.0",
+    "failures": []
+  },
+  "cron_in_progress_after": false,
+  "outcome": {
+    "pending_before": 50,
+    "pending_after": 0,
+    "drained": 50,
+    "fully_drained": true,
+    "probe_executions_observed": 50
+  },
+  "execution_contexts": {
+    "started": {
+      "Async Request": 50
+    },
+    "completed": {
+      "Async Request": 50
+    },
+    "other": {
+      "action created": 50
+    }
+  },
+  "probe_records": [
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684469.747026
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684469.969111
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684470.184932
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684470.441639
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684470.771863
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684470.979156
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684471.200571
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684471.421776
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684471.643295
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684471.866272
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684472.093525
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684472.317942
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684472.538332
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684472.761436
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684472.987553
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684473.207082
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684473.424153
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684473.64081
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684473.859177
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684474.083158
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684474.301161
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684474.525963
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684474.741877
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684474.958731
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684475.19266
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684475.419922
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684475.640802
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684475.862015
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684476.088144
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684476.308171
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684476.527649
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684476.7519
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684476.972164
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684477.192321
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684477.417115
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684477.638646
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684477.858101
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684478.080399
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684478.299494
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684478.523953
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684478.745076
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684478.967149
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684479.189635
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684479.408962
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684479.626037
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684479.850233
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684480.073121
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684480.288801
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684480.505823
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 20,
+      "timestamp": 1785684480.725799
+    }
+  ],
+  "canary_line": null,
+  "canary_fired": false,
+  "server_observed": null,
+  "post_flush_log_line": null,
+  "post_flush_status": null,
+  "vector": {
+    "name": "authenticated-admin-page-load",
+    "target_url": "http://localhost:8650/wp/wp-admin/plugins.php",
+    "authenticated_as": "admin",
+    "authenticated_user_id": 1,
+    "auth_method": "wp_set_auth_cookie() minted in-process (docker/wp-cli/lib/admin-auth.php) -- no password read, stored, or transmitted",
+    "transport_error": null
+  },
+  "settle_poll": {
+    "waited_seconds": 11.30947208404541,
+    "settled": true,
+    "timed_out": false,
+    "progress_observed": true
+  },
+  "canary_log_writability": {
+    "path": "/var/log/wpcas/php-error.log",
+    "verified_writable": true
+  },
+  "dispatch_decision": {
+    "reached": true,
+    "allowed": true
+  },
+  "guard_state": {
+    "armed_guard_files": {
+      "10-block-http-cron.php": false,
+      "20-suppress-async-dispatch.php": false,
+      "30-log-non-cli-canary.php": false,
+      "40-unhook-queue-runner.php": false
+    },
+    "canary_action_hook_registered": false
+  },
+  "matrix_context": {
+    "scenario_label": "admin-page-load-unarmed",
+    "armed_sections": [],
+    "disable_wp_cron": true,
+    "seed_count": 50
+  }
+}

@@ -1,23 +1,30 @@
 #!/usr/bin/env bash
 #
-# Arm/disarm the cron-runner-policy guard files.
+# Arm/disarm the cron-runner-policy guard sections.
 #
-# Each policy section is one file in docker/mu-plugins-available/. That
-# directory is never scanned by WordPress -- only docker/mu-plugins/ is
-# (it is bind-mounted onto wp-content/mu-plugins by docker-compose.yml).
-# "Arming" a section copies its file from -available/ into mu-plugins/;
-# "disarming" it removes that copy. There is no flag or constant inside
-# any guard file that changes its behaviour -- presence in mu-plugins/ is
-# the only toggle, so whatever runs during a scenario is exactly the code
-# that would ship.
+# Each section has an artefact -- a file in docker/mu-plugins-available/ --
+# and a destination directory it gets copied into when armed. Today every
+# section's destination is docker/mu-plugins/, which is bind-mounted onto
+# wp-content/mu-plugins by docker-compose.yml and never scanned by
+# WordPress otherwise. "Arming" a section copies its artefact from
+# -available/ into its destination; "disarming" it removes that copy.
+# There is no flag or constant inside any guard file that changes its
+# behaviour -- presence in its destination is the only toggle, so whatever
+# runs during a scenario is exactly the code that would ship.
+#
+# Not every section's destination has to be docker/mu-plugins/ -- a
+# section can act in front of WordPress instead, landing somewhere other
+# than that WordPress-scanned directory. Nothing below assumes otherwise;
+# see the GUARD_SECTIONS registry.
 #
 # Because docker-compose.yml bind-mounts docker/mu-plugins/ straight into
-# the running container, arming takes effect on the next request with no
-# rebuild and no restart -- WordPress re-scans wp-content/mu-plugins/ on
-# every request.
+# the running container, arming a section whose destination is
+# docker/mu-plugins/ takes effect on the next request with no rebuild and
+# no restart -- WordPress re-scans wp-content/mu-plugins/ on every
+# request.
 #
 # Usage:
-#   bin/guard arm [section...]   # activate exactly these sections (1-4);
+#   bin/guard arm [section...]   # activate exactly these sections (1-5);
 #                                 # no arguments disarms everything
 #   bin/guard status             # report which sections are armed, without
 #                                 # changing anything
@@ -27,32 +34,63 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AVAILABLE_DIR="$REPO_ROOT/docker/mu-plugins-available"
 ENABLED_DIR="$REPO_ROOT/docker/mu-plugins"
 
-# Section number -> guard file basename. The numbering here is the only
-# place that maps a ticket's "section N" language onto a filename.
-section_file() {
-    case "$1" in
-        1) echo "10-block-http-cron.php" ;;
-        2) echo "20-suppress-async-dispatch.php" ;;
-        3) echo "30-log-non-cli-canary.php" ;;
-        4) echo "40-unhook-queue-runner.php" ;;
-        *) return 1 ;;
-    esac
+# Issue #36 / ADR-0003: section 5 acts in front of WordPress, at the nginx
+# layer, so its destination is not the WordPress-scanned ENABLED_DIR above
+# -- it is a directory bind-mounted read-only into the nginx container
+# instead (docker-compose.yml), tested per request by an `if (-f ...)` in
+# docker/nginx/default.conf. Its artefact is a presence-only marker file,
+# not PHP -- nginx never executes it, only stats it.
+NGINX_GUARD_DIR="$REPO_ROOT/docker/nginx/guard"
+
+# The guard section registry: number, artefact filename, destination
+# directory, and label -- in one place, in report order. This is the only
+# place that maps a ticket's "section N" language onto a file, where
+# arming it lands, and what it does. Every loop below is driven by this
+# list rather than a literal "1 2 3 4 5".
+GUARD_SECTIONS=(
+    "1|10-block-http-cron.php|$ENABLED_DIR|block HTTP requests to the cron entry point"
+    "2|20-suppress-async-dispatch.php|$ENABLED_DIR|suppress Action Scheduler's async dispatch"
+    "3|30-log-non-cli-canary.php|$ENABLED_DIR|log a canary on any non-CLI queue run"
+    "4|40-unhook-queue-runner.php|$ENABLED_DIR|unhook the queue runner outside WP-CLI"
+    "5|50-block-cron-entry-nginx.marker|$NGINX_GUARD_DIR|block the cron entry point at the nginx layer, before PHP bootstraps"
+)
+
+# Looks up one field (file, dest or label) of one section's registry
+# entry. Returns non-zero if the section number isn't registered.
+registry_field() {
+    local wanted="$1" field="$2" entry num file dest label
+    for entry in "${GUARD_SECTIONS[@]}"; do
+        IFS='|' read -r num file dest label <<< "$entry"
+        if [ "$num" = "$wanted" ]; then
+            case "$field" in
+                file) echo "$file" ;;
+                dest) echo "$dest" ;;
+                label) echo "$label" ;;
+            esac
+            return 0
+        fi
+    done
+    return 1
 }
 
-section_label() {
-    case "$1" in
-        1) echo "block HTTP requests to the cron entry point" ;;
-        2) echo "suppress Action Scheduler's async dispatch" ;;
-        3) echo "log a canary on any non-CLI queue run" ;;
-        4) echo "unhook the queue runner outside WP-CLI" ;;
-    esac
+section_file() { registry_field "$1" file; }
+section_destination() { registry_field "$1" dest; }
+section_label() { registry_field "$1" label; }
+
+# All registered section numbers, in registry order.
+all_sections() {
+    local entry
+    for entry in "${GUARD_SECTIONS[@]}"; do
+        echo "${entry%%|*}"
+    done
 }
 
 report_state() {
     echo "guard state:"
-    for n in 1 2 3 4; do
+    for n in $(all_sections); do
         file="$(section_file "$n")"
-        if [ -f "$ENABLED_DIR/$file" ]; then
+        dest="$(section_destination "$n")"
+        if [ -f "$dest/$file" ]; then
             state="armed"
         else
             state="disarmed"
@@ -66,26 +104,30 @@ cmd="${1:-}"
 
 case "$cmd" in
     arm)
+        valid_sections="$(all_sections | tr '\n' ' ')"
+        valid_sections="${valid_sections% }"
+
         for requested in "$@"; do
             if ! section_file "$requested" >/dev/null 2>&1; then
-                echo "error: unknown section '$requested' (valid: 1 2 3 4)" >&2
+                echo "error: unknown section '$requested' (valid: $valid_sections)" >&2
                 exit 1
             fi
         done
 
-        mkdir -p "$ENABLED_DIR"
-
-        for n in 1 2 3 4; do
+        for n in $(all_sections); do
             file="$(section_file "$n")"
+            dest="$(section_destination "$n")"
             want=0
             for requested in "$@"; do
                 [ "$requested" = "$n" ] && want=1
             done
 
+            mkdir -p "$dest"
+
             if [ "$want" = "1" ]; then
-                cp "$AVAILABLE_DIR/$file" "$ENABLED_DIR/$file"
+                cp "$AVAILABLE_DIR/$file" "$dest/$file"
             else
-                rm -f "$ENABLED_DIR/$file"
+                rm -f "$dest/$file"
             fi
         done
 
@@ -96,7 +138,7 @@ case "$cmd" in
         ;;
     *)
         echo "Usage: $(basename "$0") {arm|status} [section...]" >&2
-        echo "  arm [1 2 3 4]   activate exactly these sections; no args disarms all" >&2
+        echo "  arm [1 2 3 4 5] activate exactly these sections; no args disarms all" >&2
         echo "  status          report the current armed/disarmed state" >&2
         exit 1
         ;;

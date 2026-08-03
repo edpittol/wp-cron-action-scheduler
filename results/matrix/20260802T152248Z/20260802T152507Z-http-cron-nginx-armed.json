@@ -1,0 +1,57 @@
+{
+  "schema_version": 4,
+  "control": "http-cron-nginx-armed",
+  "command": null,
+  "http_status": 403,
+  "started_at": "2026-08-02T15:25:08+00:00",
+  "finished_at": "2026-08-02T15:25:08+00:00",
+  "elapsed_seconds": 0.0029120445251464844,
+  "preflight": {
+    "ok": true,
+    "pending_count": 50,
+    "callback_attached": true,
+    "cron_in_progress": false,
+    "claims_count": 0,
+    "pool_max_children": 6,
+    "max_execution_time_seconds": 30,
+    "request_terminate_timeout_seconds": 35,
+    "fastcgi_read_timeout_seconds": 40,
+    "wp_version": "7.0.2",
+    "wp_version_lockfile": "7.0.2",
+    "action_scheduler_version": "4.0.0",
+    "action_scheduler_version_lockfile": "4.0.0",
+    "failures": []
+  },
+  "cron_in_progress_after": false,
+  "outcome": {
+    "pending_before": 50,
+    "pending_after": 50,
+    "drained": 0,
+    "fully_drained": false,
+    "probe_executions_observed": 0
+  },
+  "execution_contexts": {
+    "started": [],
+    "completed": [],
+    "other": {
+      "action created": 50
+    }
+  },
+  "probe_records": [],
+  "canary_line": null,
+  "canary_fired": false,
+  "server_observed": {
+    "web_status": 403,
+    "fpm_status": null
+  },
+  "post_flush_log_line": null,
+  "post_flush_status": null,
+  "matrix_context": {
+    "scenario_label": "http-cron-nginx-armed",
+    "armed_sections": [
+      5
+    ],
+    "disable_wp_cron": true,
+    "seed_count": 50
+  }
+}

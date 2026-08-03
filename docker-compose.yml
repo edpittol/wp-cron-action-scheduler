@@ -47,6 +47,16 @@ services:
       # container -- no volume needed for that half). Read-only here: this
       # container never writes to nginx's log, only reads it back.
       - nginx-access-log:/var/log/wpcas-nginx:ro
+      # Issue #30: the exact same file the nginx service below mounts as its
+      # own fastcgi_read_timeout include, bind-mounted read-only into this
+      # container too -- so a `wp eval-file` process running here
+      # (docker/wp-cli/lib/probe.php's preflight fact-gathering) can read
+      # nginx's own upstream-read-timeout value back from the identical
+      # bytes nginx itself is running with, without a second, separately
+      # maintained copy of that number that could silently drift out of
+      # agreement with it. See docker/nginx/fastcgi-read-timeout.conf's own
+      # comment for the full rationale.
+      - ./docker/nginx/fastcgi-read-timeout.conf:/etc/wpcas/nginx-fastcgi-read-timeout.conf:ro
 
   nginx:
     # Single pinned tag: nginx's whole "build" is this one image, so this
@@ -67,6 +77,17 @@ services:
       # Issue #33: writable side of the shared access-log volume above --
       # nginx is the only service that writes to it.
       - nginx-access-log:/var/log/wpcas-nginx
+      # Issue #30: the fastcgi_read_timeout include default.conf's php
+      # location block pulls in -- see that file and
+      # docker/nginx/fastcgi-read-timeout.conf's own comments.
+      - ./docker/nginx/fastcgi-read-timeout.conf:/etc/nginx/conf.d/fastcgi-read-timeout.conf:ro
+      # Guard section 5 (issue #36 / ADR-0003): bind-mounted, not baked in,
+      # for the same reason docker/mu-plugins is above -- `bin/guard arm 5`
+      # writes the marker file on the host and nginx sees it on its very
+      # next request (the `if (-f ...)` in docker/nginx/default.conf), no
+      # reload, no restart. Read-only: nginx only ever tests this marker's
+      # presence, never writes here itself.
+      - ./docker/nginx/guard:/etc/nginx/guard:ro
 
 volumes:
   webroot:

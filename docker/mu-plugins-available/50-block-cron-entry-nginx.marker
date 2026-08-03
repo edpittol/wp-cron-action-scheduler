@@ -1,0 +1,14 @@
+# Guard section 5 (issue #36 / ADR-0003): block the cron entry point at
+# the nginx layer, before PHP bootstraps at all.
+#
+# This is not a mu-plugin -- nginx never executes it, only tests for its
+# presence with `-f` on every request (docker/nginx/default.conf). Copied
+# by `bin/guard arm 5` from here into docker/nginx/guard/ (bind-mounted
+# read-only into the nginx container by docker-compose.yml); removed from
+# there to disarm. Same single arming concept as every other section --
+# presence at the destination is the only toggle, no config reload, no
+# restart -- just a different destination and a different layer, because
+# this section acts in front of WordPress instead of inside it.
+#
+# Content is irrelevant; only this file's presence at its destination is
+# ever tested.
