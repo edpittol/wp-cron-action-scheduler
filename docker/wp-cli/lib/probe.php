@@ -137,6 +137,107 @@ function wpcas_probe_claims_count(): int {
 	return (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$wpdb->prefix}actionscheduler_claims" );
 }
 
+// --- Issue #30: config facts read back from the running stack ------------
+
+/**
+ * Container-absolute paths this stack pins the four config facts at.
+ *
+ * `WPCAS_FPM_POOL_CONF_PATH` / `WPCAS_PHP_EXECUTION_TIME_INI_PATH`: baked
+ * into the php-fpm container's own image by docker/Dockerfile -- see that
+ * file's own comments for why they're named/placed the way they are (the
+ * `zz-` prefix in particular, so this pool override loads after, and
+ * therefore wins over, the base image's own `www.conf`/`docker.conf`).
+ *
+ * `WPCAS_NGINX_FASTCGI_READ_TIMEOUT_PATH`: nginx's own upstream read
+ * timeout lives in docker/nginx/fastcgi-read-timeout.conf, a file nginx
+ * itself includes (docker/nginx/default.conf) -- but nginx is a separate
+ * Compose service with its own filesystem, unreachable from a `wp eval-file`
+ * process running inside the php-fpm container. docker-compose.yml
+ * bind-mounts that exact same file, read-only, into this container too
+ * (this second, container-internal path), so preflight reads back the
+ * identical bytes nginx itself is running with, rather than a second,
+ * separately-maintained copy of the number that could silently drift out of
+ * agreement with it.
+ */
+const WPCAS_FPM_POOL_CONF_PATH               = '/usr/local/etc/php-fpm.d/zz-wpcas-pool.conf';
+const WPCAS_PHP_EXECUTION_TIME_INI_PATH       = '/usr/local/etc/php/conf.d/execution-time.ini';
+const WPCAS_NGINX_FASTCGI_READ_TIMEOUT_PATH   = '/etc/wpcas/nginx-fastcgi-read-timeout.conf';
+
+/**
+ * Reads the four config facts issue #30 requires the preflight snapshot to
+ * carry, straight from the config files docker/Dockerfile / docker/nginx/
+ * actually pin them in -- never a separate, restated literal (see
+ * docker/wp-cli/lib/server-config.php's module docblock for why, and for
+ * why `max_execution_time` is read this way rather than via `ini_get()`).
+ * A file that can't be read (should not happen in a correctly-built,
+ * correctly-composed stack) reports `null` for that fact rather than
+ * fataling -- wpcas_preflight_evaluate() is where a `null` gets turned into
+ * a loud, explicit preflight failure instead of a silently-missing number.
+ *
+ * @return array{
+ *     pool_max_children: int|null,
+ *     max_execution_time_seconds: int|null,
+ *     request_terminate_timeout_seconds: int|null,
+ *     fastcgi_read_timeout_seconds: int|null,
+ * }
+ */
+function wpcas_probe_server_config(): array {
+	$pool_conf  = @file_get_contents( WPCAS_FPM_POOL_CONF_PATH );
+	$exec_ini   = @file_get_contents( WPCAS_PHP_EXECUTION_TIME_INI_PATH );
+	$nginx_conf = @file_get_contents( WPCAS_NGINX_FASTCGI_READ_TIMEOUT_PATH );
+
+	return array(
+		'pool_max_children'                 => false !== $pool_conf ? wpcas_server_config_parse_pool_max_children( $pool_conf ) : null,
+		'request_terminate_timeout_seconds' => false !== $pool_conf ? wpcas_server_config_parse_request_terminate_timeout( $pool_conf ) : null,
+		'max_execution_time_seconds'        => false !== $exec_ini ? wpcas_server_config_parse_max_execution_time( $exec_ini ) : null,
+		'fastcgi_read_timeout_seconds'      => false !== $nginx_conf ? wpcas_server_config_parse_fastcgi_read_timeout( $nginx_conf ) : null,
+	);
+}
+
+/**
+ * The full fact set every preflight-shaped check gathers before calling
+ * wpcas_preflight_evaluate() -- preflight.php itself, plus every
+ * measure-*.php's own internal preflight re-check. Centralised here (issue
+ * #30) so the four config facts that ticket adds are wired into every one
+ * of those call sites through this single function, rather than needing
+ * the same literal facts array hand-copied into six files (the exact
+ * "disagreeing copies" trap this ticket's own acceptance criteria warns
+ * against for the pool size specifically, generalised here to every call
+ * site rather than just every config value).
+ *
+ * @return array{
+ *     pending_count: int,
+ *     callback_attached: bool,
+ *     cron_in_progress: bool,
+ *     claims_count: int,
+ *     wp_version: string,
+ *     wp_version_lockfile: string,
+ *     action_scheduler_version: string,
+ *     action_scheduler_version_lockfile: string,
+ *     pool_max_children: int|null,
+ *     max_execution_time_seconds: int|null,
+ *     request_terminate_timeout_seconds: int|null,
+ *     fastcgi_read_timeout_seconds: int|null,
+ * }
+ */
+function wpcas_probe_gather_preflight_facts(): array {
+	$lockfile_versions = wpcas_probe_lockfile_versions();
+
+	return array_merge(
+		array(
+			'pending_count'                     => wpcas_probe_pending_count(),
+			'callback_attached'                 => wpcas_probe_callback_attached(),
+			'cron_in_progress'                  => wpcas_probe_cron_in_progress(),
+			'claims_count'                      => wpcas_probe_claims_count(),
+			'wp_version'                        => wpcas_probe_wp_version(),
+			'wp_version_lockfile'               => $lockfile_versions['wordpress'],
+			'action_scheduler_version'          => wpcas_probe_action_scheduler_version(),
+			'action_scheduler_version_lockfile' => $lockfile_versions['action_scheduler'],
+		),
+		wpcas_probe_server_config()
+	);
+}
+
 /**
  * Path to the reference copy of docker/composer.lock that pinned this
  * image's build (issue #31 / ADR-0002), kept alongside the measurement
