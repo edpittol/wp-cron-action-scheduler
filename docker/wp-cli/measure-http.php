@@ -63,6 +63,17 @@ declare( strict_types=1 );
  * `server_observed` field -- evidence sourced from the server side,
  * independent of `http_status` (the client's own report of what it read
  * off the wire).
+ *
+ * Issue #35 verified (rather than assumed) what `server_observed` actually
+ * shows for the armed scenario on this stack: both nginx and PHP-FPM's own
+ * access logs record the *flushed* 200, not guard section 1's later
+ * `http_response_code( 403 )` call -- the `fastcgi_finish_request()` flush
+ * above closes the response, and, empirically, closes out both access
+ * logs' idea of this request's status right along with it. That leaves
+ * the guard's own post-flush self-report (`WPCAS_GUARD_BLOCK_LOG`, read
+ * back into `post_flush_log_line`/`post_flush_status` below) as the only
+ * source that still carries the 403 the guard actually set -- see
+ * docker/mu-plugins-available/10-block-http-cron.php's own docblock.
  */
 
 require __DIR__ . '/lib/probe.php';
@@ -71,6 +82,7 @@ require __DIR__ . '/lib/result-record.php';
 require __DIR__ . '/lib/http-status.php';
 require __DIR__ . '/lib/internal-loopback.php';
 require __DIR__ . '/lib/correlation.php';
+require_once __DIR__ . '/lib/guard-block.php'; // phpcs:ignore -- result-record.php also require_once's this (it derives post_flush_status from it); require_once avoids a redeclaration fatal regardless of include order.
 
 // Issue #33: nginx's own access log, shared into this container read-only
 // via the `nginx-access-log` volume (docker-compose.yml) -- this script
@@ -80,6 +92,13 @@ require __DIR__ . '/lib/correlation.php';
 // locally, by this same container's PHP-FPM master process.
 const WPCAS_NGINX_ACCESS_LOG = '/var/log/wpcas-nginx/access.log';
 const WPCAS_PHP_FPM_ACCESS_LOG = '/var/log/wpcas/php-fpm-access.log';
+
+// Issue #35: guard section 1's own post-flush self-report -- see
+// docker/mu-plugins-available/10-block-http-cron.php's and
+// docker/Dockerfile's own docblocks for why this needs its own,
+// deliberately-permissive destination rather than reusing php.ini's
+// `error_log` target (the section-3 canary's, read via lib/canary.php).
+const WPCAS_GUARD_BLOCK_LOG = '/var/log/wpcas/guard-block.log';
 
 /** @var array<int, string> $args Positional args from `wp eval-file`. */
 $control = $args[0] ?? 'http-wp-cron';
@@ -104,10 +123,46 @@ if ( ! $preflight['ok'] ) {
 	WP_CLI::halt( 1 );
 }
 
+// --- Guard-block log destination: verify writable, don't assume (#35) ----
+//
+// Same discipline as the section-3 canary's own writability check
+// (measure-async-ajax.php, measure-admin-page-load.php,
+// measure-manual-run.php): a marker written and read back before trusting
+// this destination for the real thing. Unlike those, this doesn't need
+// ini_get( 'error_log' ) -- guard section 1 writes to this fixed path
+// directly (error_log( $message, 3, <path> ), see that guard file's own
+// docblock), independent of php.ini entirely.
+if ( ! is_writable( dirname( WPCAS_GUARD_BLOCK_LOG ) ) && ( ! file_exists( WPCAS_GUARD_BLOCK_LOG ) || ! is_writable( WPCAS_GUARD_BLOCK_LOG ) ) ) {
+	WP_CLI::error( "Guard-block log destination '" . WPCAS_GUARD_BLOCK_LOG . "' is not writable. Refusing to run." );
+}
+
+$guard_block_writability_marker = sprintf( 'wpcas-guard-block-writability-selftest-%s-%d', $control, getmypid() );
+error_log( $guard_block_writability_marker, 3, WPCAS_GUARD_BLOCK_LOG ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log
+
+clearstatcache( true, WPCAS_GUARD_BLOCK_LOG );
+$guard_block_selftest_contents = is_readable( WPCAS_GUARD_BLOCK_LOG ) ? (string) file_get_contents( WPCAS_GUARD_BLOCK_LOG ) : '';
+$guard_block_log_writable      = false !== strpos( $guard_block_selftest_contents, $guard_block_writability_marker );
+
+if ( ! $guard_block_log_writable ) {
+	WP_CLI::error(
+		"Wrote a marker via error_log() but it did not appear in '" . WPCAS_GUARD_BLOCK_LOG . "' on read-back. " .
+		'This destination cannot be trusted to carry guard section 1\'s post-flush self-report -- refusing to run rather than ' .
+		'producing a record that can\'t distinguish "the guard never fired" from "it fired somewhere unread".'
+	);
+}
+
+fwrite( STDERR, "Guard-block log destination '" . WPCAS_GUARD_BLOCK_LOG . "' verified writable (marker round-tripped).\n" );
+
 // --- Capture pre-run state, scoped to exactly this batch -----------------
 
 $pending_before = $preflight_facts['pending_count'];
 $action_ids     = wpcas_probe_pending_action_ids();
+
+// Byte offset into the guard-block log *before* the request, so the
+// read-back afterwards is scoped to this run only -- same discipline as
+// measure-admin-page-load.php's canary_log_offset_before.
+clearstatcache( true, WPCAS_GUARD_BLOCK_LOG );
+$guard_block_log_offset_before = file_exists( WPCAS_GUARD_BLOCK_LOG ) ? (int) filesize( WPCAS_GUARD_BLOCK_LOG ) : 0;
 
 // Deliberately a bare GET, no query string. wp-cron.php (wp-includes,
 // core) branches on whether $_GET['doing_wp_cron'] is present:
@@ -301,6 +356,35 @@ fwrite(
 	)
 );
 
+// --- Read back guard section 1's own post-flush self-report (issue #35) --
+//
+// Scoped to this run only via the byte offset captured before the request
+// (same discipline as measure-admin-page-load.php's canary_log_offset_before)
+// -- a leftover line from a previous, un-truncated run must never be
+// misread as this request's own evidence. By now the settle poll above has
+// already confirmed the queue has stopped moving, so if guard section 1
+// fired for this request, its write has long since landed.
+clearstatcache( true, WPCAS_GUARD_BLOCK_LOG );
+$guard_block_log_contents = '';
+if ( file_exists( WPCAS_GUARD_BLOCK_LOG ) ) {
+	$handle = fopen( WPCAS_GUARD_BLOCK_LOG, 'rb' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- plain read of this repo's own tooling-owned log file, no WP_Filesystem context available here.
+	if ( false !== $handle ) {
+		fseek( $handle, $guard_block_log_offset_before );
+		$guard_block_log_contents = stream_get_contents( $handle );
+		fclose( $handle );
+	}
+}
+
+$post_flush_log_line = wpcas_guard_block_join_lines( wpcas_guard_block_extract_lines( (string) $guard_block_log_contents ) );
+
+fwrite(
+	STDERR,
+	sprintf(
+		"Guard section 1 post-flush self-report: %s\n",
+		null === $post_flush_log_line ? '(none -- guard did not fire for this request)' : $post_flush_log_line
+	)
+);
+
 $record = wpcas_result_record_build(
 	array(
 		'control'                => $control,
@@ -319,6 +403,7 @@ $record = wpcas_result_record_build(
 		'probe_records'          => $probe_records,
 		'cron_in_progress_after' => $cron_in_progress_after,
 		'server_observed'        => $server_observed,
+		'post_flush_log_line'    => $post_flush_log_line,
 	)
 );
 

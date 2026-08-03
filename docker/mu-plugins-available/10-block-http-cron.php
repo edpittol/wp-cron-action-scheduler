@@ -38,6 +38,22 @@ declare( strict_types=1 );
  * checking whether the action queue actually drained from an unauthorized
  * request, not just reading the HTTP status back; that check belongs to
  * the tickets that exercise this guard against a live request.
+ *
+ * Issue #35 is that ticket, for the nginx + PHP-FPM server model (issue
+ * #29): core's wp-cron.php calls fastcgi_finish_request() before this file
+ * even loads, which flushes and closes the response to the client as an
+ * already-sent 200 before the `http_response_code( 403 )` call below ever
+ * runs -- confirmed live, on this stack, both statuses land in the client
+ * response and in nginx's and PHP-FPM's own access logs (docker/wp-cli/lib/
+ * correlation.php's `server_observed`) alike, with no trace of the 403
+ * this guard actually set. That leaves the pending-count delta (0 drained)
+ * as the only other observable proof this guard ran at all -- the
+ * error_log() call immediately below is what turns "0 drained" into
+ * "0 drained *and* this exact guard is what set it", by writing the status
+ * this guard set to a destination unaffected by that flush (a plain file,
+ * not the client connection or either access log) -- see docker/wp-cli/
+ * lib/guard-block.php for how that line is read back and folded into the
+ * result record's `post_flush_status` field.
  */
 
 if (
@@ -46,5 +62,10 @@ if (
 	&& defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON
 ) {
 	http_response_code( 403 );
+	error_log( // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- message_type=3: a fixed file, deliberately independent of php.ini's `error_log` directive (docker/Dockerfile's own guard-block.log docblock explains why).
+		'[cron-guard] http entry point blocked post-flush: status=403',
+		3,
+		'/var/log/wpcas/guard-block.log'
+	);
 	exit;
 }

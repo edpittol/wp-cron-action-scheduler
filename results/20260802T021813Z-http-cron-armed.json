@@ -1,0 +1,41 @@
+{
+    "schema_version": 4,
+    "control": "http-cron-armed",
+    "command": null,
+    "http_status": 200,
+    "started_at": "2026-08-02T02:18:13+00:00",
+    "finished_at": "2026-08-02T02:18:13+00:00",
+    "elapsed_seconds": 0.00831294059753418,
+    "preflight": {
+        "ok": true,
+        "pending_count": 50,
+        "callback_attached": true,
+        "cron_in_progress": false,
+        "claims_count": 0,
+        "failures": []
+    },
+    "cron_in_progress_after": false,
+    "outcome": {
+        "pending_before": 50,
+        "pending_after": 50,
+        "drained": 0,
+        "fully_drained": false,
+        "probe_executions_observed": 0
+    },
+    "execution_contexts": {
+        "started": [],
+        "completed": [],
+        "other": {
+            "action created": 50
+        }
+    },
+    "probe_records": [],
+    "canary_line": null,
+    "canary_fired": false,
+    "server_observed": {
+        "web_status": 200,
+        "fpm_status": 200
+    },
+    "post_flush_log_line": "[cron-guard] http entry point blocked post-flush: status=403",
+    "post_flush_status": 403
+}
