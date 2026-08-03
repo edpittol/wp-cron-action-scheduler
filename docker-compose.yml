@@ -1,13 +1,13 @@
 services:
-  wordpress:
+  php-fpm:
     build:
       context: ./docker
-      # No `args:` here on purpose: the Action Scheduler version has
-      # exactly one source of truth, the ACTION_SCHEDULER_VERSION ARG
-      # default in docker/Dockerfile. Overriding it here would let this
-      # file and the Dockerfile silently disagree.
-    ports:
-      - "${STACK_PORT:-8080}:${STACK_PORT:-8080}"
+      # No `args:` here on purpose: PHP's version has exactly one source
+      # of truth, the PHP_VERSION ARG default in docker/Dockerfile.
+      # Overriding it here would let this file and the Dockerfile silently
+      # disagree -- same discipline this file already applied to the
+      # Action Scheduler version (now pinned via docker/composer.lock
+      # instead of a build arg; see the Dockerfile's Composer step).
     environment:
       STACK_PORT: "${STACK_PORT:-8080}"
       # Issue #5: DISABLE_WP_CRON must be switchable without rebuilding
@@ -17,12 +17,21 @@ services:
       # subcommand's own comment in bin/stack.
       WPCAS_DISABLE_WP_CRON: "${WPCAS_DISABLE_WP_CRON:-true}"
     volumes:
+      # The whole document root as one named volume (issue #29): nginx
+      # mounts the same volume read-only below so both services see the
+      # identical, Composer-provisioned webroot the image was built with.
+      # Per ADR-0002, this volume is populated once, on first start, from
+      # whatever the image contains at that path -- a later image rebuild
+      # (e.g. after bumping docker/composer.lock) does not reach an
+      # already-existing volume; preflight is what catches that staleness
+      # (see the version-assertion ticket), not this arrangement.
+      - webroot:/var/www/html
       # Only the actual SQLite data file persists across `up`/`down`.
       # Everything else under wp-content (plugins, the db.php drop-in)
-      # comes straight from the image, so rebuilding with a new
-      # ACTION_SCHEDULER_VERSION takes effect on the next `up` without
-      # needing a volume wipe.
-      - wp-database:/var/www/html/wp-content/database
+      # comes straight from the image (by way of the webroot volume
+      # above), so rebuilding after a composer.lock bump takes effect on
+      # the next `up` without needing a webroot volume wipe.
+      - wp-database:/var/www/html/wp/wp-content/database
       # mu-plugins is bind-mounted, not baked in, so `bin/guard arm` can
       # add/remove guard files on the host and have WordPress see the
       # change on its very next request -- no rebuild, no restart.
@@ -30,7 +39,32 @@ services:
       # whichever of the four guard files (copied in from
       # docker/mu-plugins-available/, which is not itself mounted or
       # scanned by WordPress) are currently armed.
-      - ./docker/mu-plugins:/var/www/html/wp-content/mu-plugins
+      - ./docker/mu-plugins:/var/www/html/wp/wp-content/mu-plugins
+
+  nginx:
+    # Single pinned tag: nginx's whole "build" is this one image, so this
+    # is the only place its version can come from -- same discipline as
+    # PHP_VERSION in docker/Dockerfile, just with no Dockerfile of its own
+    # to duplicate the pin into.
+    image: nginx:1.27-alpine
+    depends_on:
+      - php-fpm
+    ports:
+      - "${STACK_PORT:-8080}:80"
+    volumes:
+      # Read-only: nginx only ever serves existing files directly or hands
+      # .php requests to php-fpm (docker/nginx/default.conf) -- it never
+      # needs to write into the document root itself.
+      - webroot:/var/www/html:ro
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      # Guard section 5 (issue #36 / ADR-0003): bind-mounted, not baked in,
+      # for the same reason docker/mu-plugins is above -- `bin/guard arm 5`
+      # writes the marker file on the host and nginx sees it on its very
+      # next request (the `if (-f ...)` in docker/nginx/default.conf), no
+      # reload, no restart. Read-only: nginx only ever tests this marker's
+      # presence, never writes here itself.
+      - ./docker/nginx/guard:/etc/nginx/guard:ro
 
 volumes:
+  webroot:
   wp-database:

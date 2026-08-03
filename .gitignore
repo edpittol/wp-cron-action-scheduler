@@ -6,3 +6,4 @@
 /docker/mu-plugins/20-suppress-async-dispatch.php
 /docker/mu-plugins/30-log-non-cli-canary.php
 /docker/mu-plugins/40-unhook-queue-runner.php
+/docker/nginx/guard/50-block-cron-entry-nginx.marker

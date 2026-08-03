@@ -24,7 +24,7 @@
 # request.
 #
 # Usage:
-#   bin/guard arm [section...]   # activate exactly these sections (1-4);
+#   bin/guard arm [section...]   # activate exactly these sections (1-5);
 #                                 # no arguments disarms everything
 #   bin/guard status             # report which sections are armed, without
 #                                 # changing anything
@@ -34,16 +34,25 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AVAILABLE_DIR="$REPO_ROOT/docker/mu-plugins-available"
 ENABLED_DIR="$REPO_ROOT/docker/mu-plugins"
 
+# Issue #36 / ADR-0003: section 5 acts in front of WordPress, at the nginx
+# layer, so its destination is not the WordPress-scanned ENABLED_DIR above
+# -- it is a directory bind-mounted read-only into the nginx container
+# instead (docker-compose.yml), tested per request by an `if (-f ...)` in
+# docker/nginx/default.conf. Its artefact is a presence-only marker file,
+# not PHP -- nginx never executes it, only stats it.
+NGINX_GUARD_DIR="$REPO_ROOT/docker/nginx/guard"
+
 # The guard section registry: number, artefact filename, destination
 # directory, and label -- in one place, in report order. This is the only
 # place that maps a ticket's "section N" language onto a file, where
 # arming it lands, and what it does. Every loop below is driven by this
-# list rather than a literal "1 2 3 4".
+# list rather than a literal "1 2 3 4 5".
 GUARD_SECTIONS=(
     "1|10-block-http-cron.php|$ENABLED_DIR|block HTTP requests to the cron entry point"
     "2|20-suppress-async-dispatch.php|$ENABLED_DIR|suppress Action Scheduler's async dispatch"
     "3|30-log-non-cli-canary.php|$ENABLED_DIR|log a canary on any non-CLI queue run"
     "4|40-unhook-queue-runner.php|$ENABLED_DIR|unhook the queue runner outside WP-CLI"
+    "5|50-block-cron-entry-nginx.marker|$NGINX_GUARD_DIR|block the cron entry point at the nginx layer, before PHP bootstraps"
 )
 
 # Looks up one field (file, dest or label) of one section's registry
@@ -129,7 +138,7 @@ case "$cmd" in
         ;;
     *)
         echo "Usage: $(basename "$0") {arm|status} [section...]" >&2
-        echo "  arm [1 2 3 4]   activate exactly these sections; no args disarms all" >&2
+        echo "  arm [1 2 3 4 5] activate exactly these sections; no args disarms all" >&2
         echo "  status          report the current armed/disarmed state" >&2
         exit 1
         ;;

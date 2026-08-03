@@ -5,11 +5,11 @@ declare( strict_types=1 );
 /**
  * Measures the HTTP vector (issue #5): an unauthenticated GET to
  * wp-cron.php, issued as a genuinely separate HTTP request against this
- * stack's own running PHP built-in server -- not a same-process
- * simulation of one. Same evidence pipeline as docker/wp-cli/measure.php
- * (issue #4): preflight first, refuse to measure on failure, then build
- * and write the canonical result record (docker/wp-cli/lib/result-record.php,
- * schema_version 3).
+ * stack's own running nginx + PHP-FPM server model (issue #29; previously
+ * PHP's built-in server) -- not a same-process simulation of one. Same
+ * evidence pipeline as docker/wp-cli/measure.php (issue #4): preflight
+ * first, refuse to measure on failure, then build and write the canonical
+ * result record (docker/wp-cli/lib/result-record.php, schema_version 3).
  *
  * This is the HTTP-vector row shape that file's own docblock reserves for
  * #5/#6/#7: `command` is always null (no WP-CLI command runs here) and
@@ -20,16 +20,30 @@ declare( strict_types=1 );
  * acceptance criterion is provable from the committed record itself, not
  * from an uncommitted follow-up preflight taken on trust.
  *
- * On *this* stack (PHP's built-in server via `php -S`, no PHP-FPM, no
- * `fastcgi_finish_request()`) that status line is genuinely observable by
- * the client -- unlike behind PHP-FPM, where core's wp-cron.php flushes
- * and closes the response as 200 before any mu-plugin code (including the
- * guard this measures) ever runs. See docker/mu-plugins-available/
- * 10-block-http-cron.php's own docblock, and this ticket's `## Decisions`,
- * for that deviation. Recorded here regardless, per the ticket
- * ("status codes are recorded but never used to determine outcome") --
- * wpcas_result_compute_outcome() never takes it as an input; outcome is
- * always pending-count-before/after plus the probe's own execution log.
+ * Under PHP-FPM (unlike the built-in server this stack ran under before
+ * issue #29), core's wp-cron.php calls `fastcgi_finish_request()` before
+ * mu-plugins load, which flushes and closes the response to the client as
+ * an already-sent 200 before any mu-plugin code (including the guard this
+ * measures) ever runs -- this is the masking finding docs/adr/0001 exists
+ * to make measurable on this stack. `http_status` here does not yet prove
+ * that either way; recording and interpreting it as such is out of scope
+ * for this ticket (see docker/mu-plugins-available/10-block-http-cron.php's
+ * own docblock for the guard-level caveat this predates). Recorded
+ * regardless, per issue #5's own decision ("status codes are recorded but
+ * never used to determine outcome") -- wpcas_result_compute_outcome()
+ * never takes it as an input; outcome is always pending-count-before/after
+ * plus the probe's own execution log.
+ *
+ * That same early flush is also why `pending_after` is read from a
+ * bounded settle poll (`wpcas_probe_poll_until_settled()`, lib/probe.php)
+ * now, not immediately after this script's own GET returns: the response
+ * this script receives can be fully closed out before wp-cron.php has
+ * even started draining anything, since draining happens *after* the
+ * flush, in the same worker. Reading pending_after synchronously (as this
+ * script did before issue #29, correctly, when the built-in server always
+ * finished draining before responding at all) would race that
+ * still-running background work and misreport a false "0 drained" on
+ * every unarmed run.
  *
  * Usage: wp eval-file docker/wp-cli/measure-http.php <label>
  *   <label>  a free-form scenario label (e.g. "http-cron-unarmed"), used
@@ -46,6 +60,7 @@ require __DIR__ . '/lib/probe.php';
 require __DIR__ . '/lib/preflight-assertions.php';
 require __DIR__ . '/lib/result-record.php';
 require __DIR__ . '/lib/http-status.php';
+require __DIR__ . '/lib/internal-loopback.php';
 
 /** @var array<int, string> $args Positional args from `wp eval-file`. */
 $control = $args[0] ?? 'http-wp-cron';
@@ -75,17 +90,6 @@ if ( ! $preflight['ok'] ) {
 $pending_before = $preflight_facts['pending_count'];
 $action_ids     = wpcas_probe_pending_action_ids();
 
-// STACK_PORT is exported into this container's environment by
-// docker-compose.yml (see bin/stack, which derives it and passes it
-// through). The built-in server (entrypoint.sh) listens on
-// 0.0.0.0:$STACK_PORT, so a request to 127.0.0.1 on the same port from
-// inside this same container reaches that exact running server -- the
-// same one a real external client would.
-$port = getenv( 'STACK_PORT' );
-if ( false === $port || '' === $port ) {
-	WP_CLI::error( 'STACK_PORT is not set in this container\'s environment -- cannot build the request URL.' );
-}
-
 // Deliberately a bare GET, no query string. wp-cron.php (wp-includes,
 // core) branches on whether $_GET['doing_wp_cron'] is present:
 //
@@ -114,13 +118,26 @@ if ( false === $port || '' === $port ) {
 // exists to catch. A bare GET with no query string is what an actual
 // unauthenticated client (a browser, `curl`, a scanner) sends, and takes
 // the `if` branch that both sets and matches its own lock.
-$url = sprintf( 'http://127.0.0.1:%s/wp-cron.php', $port );
+// site_url(), not a hand-built string: WP_SITEURL (docker/Dockerfile)
+// already carries the `/wp` prefix core lives under (issue #29), so this
+// resolves to ".../wp/wp-cron.php" without this script needing to know
+// that prefix itself.
+//
+// wpcas_internal_loopback_rewrite() (lib/internal-loopback.php) then
+// swaps the connection target from "localhost:$STACK_PORT" -- correct
+// for a real external client, but unreachable from *inside* this
+// php-fpm container now that nginx is a separate Compose service -- for
+// nginx's own service name, while keeping the original host:port as an
+// explicit Host header below. See that file's own docblock for why.
+$loopback = wpcas_internal_loopback_rewrite( site_url( 'wp-cron.php' ) );
+$url      = $loopback['url'];
 
 fwrite(
 	STDERR,
 	sprintf(
-		"Preflight passed. Issuing unauthenticated GET %s against %d pending action(s)...\n",
+		"Preflight passed. Issuing unauthenticated GET %s (Host: %s) against %d pending action(s)...\n",
 		$url,
+		$loopback['host_header'],
 		$pending_before
 	)
 );
@@ -141,6 +158,7 @@ $context = stream_context_create(
 	array(
 		'http' => array(
 			'method'        => 'GET',
+			'header'        => "Host: {$loopback['host_header']}\r\n",
 			'timeout'       => 120,
 			'ignore_errors' => true,
 		),
@@ -170,8 +188,36 @@ if ( array() === $response_headers ) {
 }
 
 // --- Capture post-run state ------------------------------------------------
+//
+// Issue #29: under PHP-FPM, core's wp-cron.php calls
+// fastcgi_finish_request() before it does anything else, which flushes
+// and closes the response to *this* client -- the request above can
+// return in a few milliseconds even when wp-cron.php goes on to actually
+// drain the whole queue afterwards, in the same worker, after the
+// connection is already closed. Reading pending_after immediately (as
+// this script did under the old built-in server, which had no such call
+// and always finished draining before responding at all) would race that
+// still-running background work and read a false "0 drained" on every
+// unarmed run -- not because nothing happened, but because nothing had
+// happened *yet* by the time this script checked. wpcas_probe_poll_until_settled()
+// (lib/probe.php, already used by measure-admin-page-load.php and
+// measure-manual-run.php for the same reason on their own fire-and-forget
+// paths) waits for the pending count to actually stabilise instead.
+$poll = wpcas_probe_poll_until_settled( $pending_before, 30 );
 
-$pending_after     = wpcas_probe_pending_count();
+fwrite(
+	STDERR,
+	sprintf(
+		"Poll finished after %.3fs (settled=%s, timed_out=%s, progress_observed=%s): pending=%d.\n",
+		$poll['waited_seconds'],
+		$poll['settled'] ? 'true' : 'false',
+		$poll['timed_out'] ? 'true' : 'false',
+		$poll['progress_observed'] ? 'true' : 'false',
+		$poll['pending']
+	)
+);
+
+$pending_after     = $poll['pending'];
 $log_messages      = wpcas_probe_log_messages_for_actions( $action_ids );
 $probe_records     = wpcas_probe_execution_log_entries();
 $cron_in_progress_after = wpcas_probe_cron_in_progress();

@@ -205,6 +205,15 @@ $target_url = add_query_arg(
 	admin_url( 'tools.php' )
 );
 
+// Issue #29: admin_url() resolves against WP_SITEURL, "localhost:$STACK_PORT"
+// -- correct for a real external client, but nginx (not this php-fpm
+// container) is what actually listens there now, on a separate Compose
+// service. This works anyway, including across the redirect this request
+// triggers (see below): docker/mu-plugins/wpcas-internal-loopback-resolve.php
+// transparently redirects the *connection* (not the Host header WordPress
+// still sends) to nginx for any loopback built from this site's own
+// siteurl. Nothing below needs to know any of that.
+
 // Byte offset into the canary log *before* the request.
 clearstatcache( true, $canary_log_path );
 $canary_log_offset_before = file_exists( $canary_log_path ) ? (int) filesize( $canary_log_path ) : 0;
