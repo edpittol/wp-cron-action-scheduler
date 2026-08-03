@@ -12,7 +12,7 @@
         "johnpbloch/wordpress-core-installer": "^2.0",
         "johnpbloch/wordpress-core": "7.0.2",
         "wpackagist-plugin/action-scheduler": "4.0.0",
-        "wpackagist-plugin/sqlite-database-integration": "*"
+        "wpackagist-plugin/sqlite-database-integration": "2.2.23"
     },
     "extra": {
         "wordpress-install-dir": "wp",

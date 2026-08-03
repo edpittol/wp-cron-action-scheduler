@@ -12,10 +12,6 @@ FROM php:${PHP_VERSION}
 
 LABEL org.opencontainers.image.description="WordPress (nginx + PHP-FPM + SQLite) with Action Scheduler, both pinned via docker/composer.lock"
 
-# WP-CLI's and Composer's extractors need more than PHP's stock 128M
-# default to unpack the WordPress core and plugin archives.
-RUN echo "memory_limit = 512M" > /usr/local/etc/php/conf.d/memory-limit.ini
-
 # Issue #6's canary guard (docker/mu-plugins-available/30-log-non-cli-canary.php)
 # writes to PHP's error log. Left at its default, PHP's `error_log` ini
 # directive is empty, which under PHP-FPM means every error_log() call
