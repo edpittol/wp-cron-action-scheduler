@@ -9,8 +9,10 @@ declare( strict_types=1 );
  * invocation) from the host, alongside its own concurrent front-end HTTP
  * requests, to get ground truth for when the triggered drain starts and
  * ends -- polled this way (a plain CLI process) rather than over HTTP so
- * polling itself never consumes one of the php-cli-server workers being
- * measured.
+ * polling itself never occupies one of the PHP-FPM pool children being
+ * measured. Issue #37 renamed what is being competed for (children, not
+ * the retired built-in server's workers); the reason is unchanged, since a
+ * `wp` process goes through neither nginx nor FPM.
  *
  * Usage: wp eval-file docker/wp-cli/pending-count.php
  *

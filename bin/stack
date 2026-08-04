@@ -90,15 +90,17 @@ compose() {
 # then fires concurrent GET / requests against this stack's own published
 # port at increasing concurrency levels while polling the drain's own
 # pending count out-of-band (via wp-cli, never over HTTP, so polling itself
-# never consumes one of the php-cli-server workers being measured). Prints
+# never occupies one of the PHP-FPM pool children being measured). Prints
 # the finished JSON record from docker/wp-cli/lib/occupancy-assertions.php
 # (via bin/occupancy-report.php), which names the server model explicitly
-# so the figures can never be misread as PHP-FPM.
+# so a figure measured under one server model is never quoted as another's.
 #
 # Concurrency levels deliberately bracket the worker pool: below, at, and
-# (twice) above PHP_CLI_SERVER_WORKERS, so a run can show latency staying
-# flat under the free-worker count and degrading once concurrency exceeds
-# it -- see the PR's "Decisions" for the run that validated this bracket.
+# (twice) above the pool's own child count (`pm.max_children`, read back
+# from the running stack by occupancy_workers_total() below), so a run can
+# show latency staying flat under the free-child count and degrading once
+# concurrency exceeds it -- see the PR's "Decisions" for the run that
+# validated this bracket.
 WPCAS_OCCUPANCY_CONCURRENCY_LEVELS=(3 6 12 24)
 WPCAS_OCCUPANCY_DRAIN_TIMEOUT_SECONDS=30
 
@@ -122,9 +124,39 @@ occupancy_curl_wave() {
 }
 
 # Polled via a plain wp-cli process (CLI SAPI), not over HTTP -- so polling
-# never competes with the front-end requests for a php-cli-server worker.
+# never competes with the front-end requests for a PHP-FPM pool child. The
+# reason is unchanged from when this stack ran PHP's built-in server (issue
+# #37 only renamed what is being competed for): a request served over HTTP
+# would occupy one of the very children whose occupancy is being measured,
+# and a `wp` process does not go through nginx or FPM at all.
 occupancy_pending_count() {
     compose exec -T php-fpm wp eval-file --use-include /opt/wpcas-tools/pending-count.php --allow-root 2>/dev/null | tail -1
+}
+
+# The PHP-FPM pool's own child count, read back from the config file the
+# running pool is actually using (docker/Dockerfile's zz-wpcas-pool.conf) via
+# the same pure parser preflight uses for the identical fact
+# (docker/wp-cli/lib/server-config.php) -- never restated here as a second
+# literal "6" that could drift out of agreement with the pool itself.
+#
+# Issue #37: this replaces a `printenv PHP_CLI_SERVER_WORKERS` read that
+# could only ever fail after the built-in server was deleted (issue #29),
+# silently falling back to a placeholder 1 and stamping that wrong number
+# onto every occupancy record. A pool size that cannot be read back is a
+# loud failure here instead: an occupancy record's whole point is
+# attributing a drain's cost to a known pool size, so a guessed one is
+# worse than none.
+occupancy_workers_total() {
+    compose exec -T php-fpm php -r '
+        require "/opt/wpcas-tools/lib/server-config.php";
+        $conf = @file_get_contents( "/usr/local/etc/php-fpm.d/zz-wpcas-pool.conf" );
+        $workers = false !== $conf ? wpcas_server_config_parse_pool_max_children( $conf ) : null;
+        if ( null === $workers ) {
+            fwrite( STDERR, "could not read pm.max_children back from the running pool\n" );
+            exit( 1 );
+        }
+        echo $workers, "\n";
+    ' 2>/dev/null | tr -d '\r\n'
 }
 
 # Fires the single request that starts the drain, timed and status-coded in
@@ -161,17 +193,17 @@ run_occupancy() {
     echo "== occupancy: preflight ==" >&2
     compose exec -T php-fpm wp eval-file --use-include /opt/wpcas-tools/preflight.php --allow-root >&2
 
-    # Issue #29: PHP_CLI_SERVER_WORKERS no longer exists (it was the
-    # built-in server's own worker-pool env var, deleted along with
-    # php -S itself) -- printenv now always fails to find it, which would
-    # otherwise abort this whole script under `set -e -o pipefail`. The
-    # `|| true` below restores the fallback-to-1 this line already
-    # intended for that case; php-fpm's actual pool size (and reporting
-    # it accurately here instead of this placeholder) is out of scope for
-    # this ticket -- see the occupancy-relabelling ticket.
+    # Issue #37: the real pool size, read back from the running pool's own
+    # config (see occupancy_workers_total()). No fallback: an unreadable
+    # pool size aborts before any wave is fired, rather than proceeding to
+    # stamp a placeholder onto a record that exists to attribute a drain's
+    # cost to a known pool.
     local workers_total
-    workers_total="$(compose exec -T php-fpm printenv PHP_CLI_SERVER_WORKERS 2>/dev/null | tr -d '\r\n' || true)"
-    [ -n "$workers_total" ] || workers_total=1
+    workers_total="$(occupancy_workers_total)"
+    if [ -z "$workers_total" ]; then
+        echo "error: could not read the PHP-FPM pool's pm.max_children back from the running stack -- refusing to measure occupancy against an unknown pool size" >&2
+        exit 1
+    fi
 
     echo "== occupancy: baseline waves (no drain in flight, workers_total=${workers_total}) ==" >&2
     local baseline_waves_file drain_waves_file drain_samples_file facts_file
@@ -224,7 +256,7 @@ run_occupancy() {
     done
 
     jq -n \
-        --arg server_model "php-cli-server" \
+        --arg server_model "nginx + php-fpm (fpm-fcgi)" \
         --argjson workers_total "$workers_total" \
         --arg trigger_url "http://localhost:${STACK_PORT}/wp/wp-admin/index.php" \
         --argjson trigger_response_seconds "$trigger_time" \

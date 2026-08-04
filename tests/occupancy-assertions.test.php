@@ -44,11 +44,11 @@ function wpcas_test_assert_false( string $label, bool $actual, array &$failures 
  * A representative "healthy" set of facts: a fast trigger, a drain that
  * visibly drains over several seconds before completing, and front-end
  * latency that clearly degrades once concurrency (20) exceeds the
- * available workers (6 total, 1 tied up by the drain -- 5 free).
+ * available pool children (6 total, 1 tied up by the drain -- 5 free).
  */
 function wpcas_test_healthy_facts(): array {
 	return array(
-		'server_model'  => 'php-cli-server',
+		'server_model'  => 'nginx + php-fpm (fpm-fcgi)',
 		'workers_total' => 6,
 		'trigger'       => array(
 			'url'              => 'http://localhost:8080/wp-admin/index.php',
@@ -111,7 +111,7 @@ function wpcas_test_healthy_facts(): array {
 $result = wpcas_occupancy_build_record( wpcas_test_healthy_facts() );
 
 wpcas_test_assert_same( 'healthy: result_kind', 'measured', $result['result_kind'], $failures );
-wpcas_test_assert_same( 'healthy: server_model', 'php-cli-server, 6 workers', $result['server_model'], $failures );
+wpcas_test_assert_same( 'healthy: server_model', 'nginx + php-fpm (fpm-fcgi), 6 workers', $result['server_model'], $failures );
 wpcas_test_assert_same( 'healthy: drain_duration_seconds', 10.0, $result['drain_duration_seconds'], $failures );
 wpcas_test_assert_true( 'healthy: drain_completed', $result['drain_completed'], $failures );
 wpcas_test_assert_true( 'healthy: drain_observed_in_flight', $result['drain_observed_in_flight'], $failures );
