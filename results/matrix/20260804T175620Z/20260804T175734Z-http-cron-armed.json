@@ -1,17 +1,25 @@
 {
-  "schema_version": 3,
-  "control": "async-ajax:async-ajax-unhook-armed",
+  "schema_version": 5,
+  "control": "http-cron-armed",
   "command": null,
   "http_status": 200,
-  "started_at": "2026-07-29T17:51:48+00:00",
-  "finished_at": "2026-07-29T17:51:53+00:00",
-  "elapsed_seconds": 5.035973072052002,
+  "started_at": "2026-08-04T17:57:35+00:00",
+  "finished_at": "2026-08-04T17:57:35+00:00",
+  "elapsed_seconds": 0.003367900848388672,
   "preflight": {
     "ok": true,
     "pending_count": 50,
     "callback_attached": true,
     "cron_in_progress": false,
     "claims_count": 0,
+    "wp_version": "7.0.2",
+    "wp_version_lockfile": "7.0.2",
+    "action_scheduler_version": "4.0.0",
+    "action_scheduler_version_lockfile": "4.0.0",
+    "pool_max_children": 6,
+    "max_execution_time_seconds": 30,
+    "request_terminate_timeout_seconds": 35,
+    "fastcgi_read_timeout_seconds": 40,
     "failures": []
   },
   "cron_in_progress_after": false,
@@ -32,21 +40,15 @@
   "probe_records": [],
   "canary_line": null,
   "canary_fired": false,
-  "vector": {
-    "name": "unauthenticated-admin-ajax-async-runner",
-    "target_url": "http://localhost:8785/wp-admin/admin-ajax.php?action=as_async_request_queue_runner&nonce=6ed34aeff5",
-    "nonce_action": "as_async_request_queue_runner",
-    "nonce_minted_as_user_id": 0,
-    "transport_error": null
-  },
-  "canary_log_writability": {
-    "path": "/var/log/wpcas/php-error.log",
-    "verified_writable": true
+  "server_observed": {
+    "web_status": 200,
+    "fpm_status": 200,
+    "post_flush_status": 200
   },
   "matrix_context": {
-    "scenario_label": "async-ajax-unhook-armed",
+    "scenario_label": "http-cron-armed",
     "armed_sections": [
-      4
+      1
     ],
     "disable_wp_cron": true,
     "seed_count": 50

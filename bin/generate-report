@@ -136,6 +136,34 @@ function wpcas_report_armed_label( array $sections ): string {
 }
 
 /**
+ * One of `server_observed`'s statuses, rendered for the scenario table
+ * (issue #35).
+ *
+ * Three outcomes, kept distinct on purpose:
+ *
+ *   - `n/a`  -- the record carries no `server_observed` at all, so this
+ *               source does not apply to the row (a CLI control never made
+ *               an HTTP request to correlate).
+ *   - `none` -- the block exists but this source recorded nothing for the
+ *               request. Never rendered as a number borrowed from another
+ *               source: for a section-5 row, FPM and the post-flush probe
+ *               recording nothing IS the evidence that nginx refused the
+ *               request before PHP ran.
+ *   - the status itself.
+ *
+ * @param array<string, mixed>|null $server_observed
+ */
+function wpcas_report_server_status( ?array $server_observed, string $key ): string {
+	if ( null === $server_observed ) {
+		return 'n/a';
+	}
+
+	$status = $server_observed[ $key ] ?? null;
+
+	return null === $status ? 'none' : (string) (int) $status;
+}
+
+/**
  * @param array<string, mixed>|null $preflight
  */
 function wpcas_report_preflight_compact( ?array $preflight ): string {
@@ -214,8 +242,10 @@ $md[] = '## Scenario table';
 $md[] = '';
 $md[] = 'Every row below is read directly from its own committed record under `results/matrix/' . $run_timestamp . '/<scenario>.json` -- the `Preflight` column is that exact run\'s preflight snapshot (captured *before* the control ran), so a reader can verify the empty-queue, missing-callback, stale-claim, and leftover-transient traps were excluded for that specific row, not take it on trust.';
 $md[] = '';
-$md[] = '| Scenario | Armed sections | DISABLE_WP_CRON | Drained | Fully drained | Execution contexts (started) | Elapsed (s) | HTTP status | Preflight snapshot |';
-$md[] = '|---|---|---|---|---|---|---|---|---|';
+$md[] = 'The four status columns are four independent sources for the same request, and they are allowed to disagree -- that disagreement is the masking finding (issue #35), not an inconsistency. `Client` is what this repo\'s own HTTP client read off the wire (`http_status`); `nginx` and `FPM` are what each server independently logged for that request id (`server_observed.web_status` / `.fpm_status`); `Post-flush` is PHP\'s own status read back at shutdown, after the response was already closed (`server_observed.post_flush_status`). A `n/a` means that source does not apply to the row (a CLI control never made a request); a `none` means the source applies but recorded nothing -- for `FPM`/`Post-flush` on a section-5 row, that is the point: the request never reached PHP at all. **No column here decides an outcome**; outcome is always the pending-count delta plus the probe\'s own execution log.';
+$md[] = '';
+$md[] = '| Scenario | Armed sections | DISABLE_WP_CRON | Drained | Fully drained | Execution contexts (started) | Elapsed (s) | Client | nginx | FPM | Post-flush | Preflight snapshot |';
+$md[] = '|---|---|---|---|---|---|---|---|---|---|---|---|';
 
 foreach ( $scenarios as $scenario ) {
 	$context       = $scenario['matrix_context'] ?? array();
@@ -227,8 +257,16 @@ foreach ( $scenarios as $scenario ) {
 	$http_status   = null === ( $scenario['http_status'] ?? null ) ? 'n/a' : (string) $scenario['http_status'];
 	$preflight     = wpcas_report_preflight_compact( $scenario['preflight'] ?? null );
 
+	// Issue #35: the three server-side statuses, each rendered from its own
+	// field and never backfilled from another. `server_observed` absent
+	// entirely (a CLI control) reads "n/a"; present but null for one source
+	// reads "none" -- a real observation about where a request stopped, not
+	// a missing figure. wpcas_report_server_status() keeps that distinction
+	// in one place rather than three inline ternaries.
+	$server_observed = $scenario['server_observed'] ?? null;
+
 	$md[] = sprintf(
-		'| `%s` | %s | %s | %d | %s | %s | %s | %s | %s |',
+		'| `%s` | %s | %s | %d | %s | %s | %s | %s | %s | %s | %s | %s |',
 		wpcas_report_md_escape( (string) ( $scenario['control'] ?? $scenario['_file'] ) ),
 		wpcas_report_md_escape( $armed ),
 		$disable_cron,
@@ -237,10 +275,122 @@ foreach ( $scenarios as $scenario ) {
 		wpcas_report_md_escape( $contexts_desc ),
 		$elapsed,
 		$http_status,
+		wpcas_report_server_status( $server_observed, 'web_status' ),
+		wpcas_report_server_status( $server_observed, 'fpm_status' ),
+		wpcas_report_server_status( $server_observed, 'post_flush_status' ),
 		wpcas_report_md_escape( $preflight )
 	);
 }
 $md[] = '';
+
+// --- The masking finding (issue #35) -------------------------------------
+//
+// Rendered as its own section because it is the finding this repo exists
+// for, and because it is only legible as a COMPARISON: the same guard
+// decision, at two layers, producing two different things a client can see.
+// Every figure below is read verbatim from a field of a committed record in
+// this run -- the prose says what the numbers mean, it never supplies one.
+
+$md[] = '## The masking finding: a guard inside PHP cannot return a status (issue #35)';
+$md[] = '';
+
+$masking_rows = array(
+	'http-cron-armed'  => 'Guard section 1 -- the block runs INSIDE WordPress, as a mu-plugin, after core\'s `wp-cron.php` has already called `fastcgi_finish_request()`.',
+	'nginx-cron-armed' => 'Guard section 5 -- the same block, moved in FRONT of PHP (nginx). Nothing has been flushed, because PHP never ran.',
+);
+
+$masking_found = false;
+foreach ( $masking_rows as $control => $description ) {
+	$record = null;
+	foreach ( $scenarios as $scenario ) {
+		if ( $control === ( $scenario['control'] ?? null ) ) {
+			$record = $scenario;
+			break;
+		}
+	}
+
+	if ( null === $record ) {
+		continue;
+	}
+
+	$masking_found   = true;
+	$server_observed = $record['server_observed'] ?? null;
+	$outcome         = $record['outcome'] ?? array();
+
+	$md[] = sprintf( '### `%s`', $control );
+	$md[] = '';
+	$md[] = $description;
+	$md[] = '';
+	$md[] = sprintf( '- Status the client read: **%s**', null === ( $record['http_status'] ?? null ) ? 'n/a' : (string) $record['http_status'] );
+	$md[] = sprintf( '- Status nginx logged: **%s**', wpcas_report_server_status( $server_observed, 'web_status' ) );
+	$md[] = sprintf( '- Status PHP-FPM logged: **%s**', wpcas_report_server_status( $server_observed, 'fpm_status' ) );
+	$md[] = sprintf( '- Status PHP held at shutdown, after the response was closed: **%s**', wpcas_report_server_status( $server_observed, 'post_flush_status' ) );
+	$md[] = sprintf( '- Probe actions drained: **%d** of %d', (int) ( $outcome['drained'] ?? 0 ), (int) ( $outcome['pending_before'] ?? 0 ) );
+	$md[] = '';
+}
+
+if ( $masking_found ) {
+	$md[] = 'What the two rows above establish together, and what each on its own cannot:';
+	$md[] = '';
+	$md[] = '1. **The guard works either way.** Both rows drained zero. Outcome never came from a status.';
+	$md[] = '2. **Only the outer layer can say so.** Section 1\'s client reads a success; section 5\'s client reads the refusal.';
+	$md[] = '3. **The masked 403 is not hidden somewhere server-side -- it does not exist.** This is the claim issue #35 required be verified rather than assumed, and the verification is the two "status" lines under `http-cron-armed`: PHP-FPM logged the flushed status, and PHP\'s own status at shutdown was still the flushed status. A guard\'s `http_response_code( 403 )` after `fastcgi_finish_request()` is refused outright -- measured directly, and independently of WordPress, by the isolation proof (`bin/stack measure-fastcgi-isolation`, committed under `results/`): its `flush-then-status` file records `attempted_status` 403, `set_call_returned` false, and a post-flush status read back as 200, while its `status-then-flush` control -- same call, nothing flushed first -- records 403 accepted and observable.';
+	$md[] = '';
+	$md[] = 'The cost of that visibility is the next section\'s counter-example: nginx cannot read `DISABLE_WP_CRON`, so section 5 blocks a site that still depends on the web loopback.';
+	$md[] = '';
+} else {
+	$md[] = '_Neither `http-cron-armed` nor `nginx-cron-armed` produced a record in this run -- nothing to compare. See the "Not verified" section below._';
+	$md[] = '';
+}
+
+// --- The fleet caveat, and the layer that cannot honour it (issue #36) ----
+//
+// ADR-0003's trade-off, rendered from the two cron-constant-off records
+// rather than argued. Same vector, same constant, two layers: one goes
+// inert (by design), the other cannot.
+
+$md[] = '## The fleet caveat: what an nginx-layer block cannot do (issue #36)';
+$md[] = '';
+$md[] = 'Both rows below run with `DISABLE_WP_CRON` **false** -- a site that has not opted out of core\'s own loopback, and therefore still depends on `wp-cron.php` being reachable for cron to run at all.';
+$md[] = '';
+
+$fleet_rows = array(
+	'http-cron-armed-cron-enabled'  => 'Guard section 1 (inside WordPress) checks the constant and deliberately goes inert.',
+	'nginx-cron-armed-cron-enabled' => 'Guard section 5 (nginx) cannot read a PHP constant, so it blocks regardless.',
+);
+
+$fleet_found = false;
+foreach ( $fleet_rows as $control => $description ) {
+	$record = null;
+	foreach ( $scenarios as $scenario ) {
+		if ( $control === ( $scenario['control'] ?? null ) ) {
+			$record = $scenario;
+			break;
+		}
+	}
+
+	if ( null === $record ) {
+		continue;
+	}
+
+	$fleet_found = true;
+	$outcome     = $record['outcome'] ?? array();
+
+	$md[] = sprintf(
+		'- `%s` -- %s Status the client read: **%s**. Drained: **%d** of %d.',
+		$control,
+		$description,
+		null === ( $record['http_status'] ?? null ) ? 'n/a' : (string) $record['http_status'],
+		(int) ( $outcome['drained'] ?? 0 ),
+		(int) ( $outcome['pending_before'] ?? 0 )
+	);
+}
+$md[] = '';
+
+if ( $fleet_found ) {
+	$md[] = 'This is the committed counter-example, not a caveat in prose: an **observable status** or a fleet-safe conditional block, at one layer, but not both. A shared guard rolled out across a fleet arms section 5 for every site alike -- including the ones whose cron it silently ends.';
+	$md[] = '';
+}
 
 // --- Per-entry-point execution contexts (full) ---------------------------
 

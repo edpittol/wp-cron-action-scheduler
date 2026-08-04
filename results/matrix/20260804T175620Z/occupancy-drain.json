@@ -1,0 +1,419 @@
+{
+    "result_kind": "measured",
+    "server_model": "nginx + php-fpm (fpm-fcgi), 6 workers",
+    "workers_total": 6,
+    "workers_occupied_by_drain": 1,
+    "workers_occupied_by_drain_method": "architectural-inference",
+    "workers_occupied_by_drain_basis": "PHP-FPM hands each request to exactly one pool child, which serves it synchronously for that request's lifetime; Action Scheduler processed the whole due batch as one such request, confirmed for this run by the continuous, gap-free pending-count decline in pending_count_samples. FPM's status page (which would report a live \"active processes\" count) is not enabled on this stack, so this figure is not a direct server-side reading.",
+    "trigger": {
+        "url": "http://localhost:8888/wp/wp-admin/index.php",
+        "http_code": 302,
+        "response_seconds": 1.024727,
+        "is_fast": false
+    },
+    "drain_duration_seconds": 10.420867,
+    "drain_completed": true,
+    "drain_observed_in_flight": true,
+    "pending_count_samples": [
+        {
+            "t_offset_seconds": 0.003796,
+            "pending": 47
+        },
+        {
+            "t_offset_seconds": 0.373677,
+            "pending": 46
+        },
+        {
+            "t_offset_seconds": 0.716215,
+            "pending": 44
+        },
+        {
+            "t_offset_seconds": 1.149813,
+            "pending": 42
+        },
+        {
+            "t_offset_seconds": 1.753467,
+            "pending": 40
+        },
+        {
+            "t_offset_seconds": 2.082816,
+            "pending": 38
+        },
+        {
+            "t_offset_seconds": 2.509414,
+            "pending": 36
+        },
+        {
+            "t_offset_seconds": 3.076829,
+            "pending": 33
+        },
+        {
+            "t_offset_seconds": 3.787256,
+            "pending": 31
+        },
+        {
+            "t_offset_seconds": 4.142251,
+            "pending": 29
+        },
+        {
+            "t_offset_seconds": 4.574381,
+            "pending": 27
+        },
+        {
+            "t_offset_seconds": 5.080661,
+            "pending": 25
+        },
+        {
+            "t_offset_seconds": 5.678091,
+            "pending": 22
+        },
+        {
+            "t_offset_seconds": 6.007751,
+            "pending": 20
+        },
+        {
+            "t_offset_seconds": 6.36532,
+            "pending": 19
+        },
+        {
+            "t_offset_seconds": 6.742251,
+            "pending": 17
+        },
+        {
+            "t_offset_seconds": 7.352473,
+            "pending": 14
+        },
+        {
+            "t_offset_seconds": 7.654376,
+            "pending": 13
+        },
+        {
+            "t_offset_seconds": 7.958526,
+            "pending": 11
+        },
+        {
+            "t_offset_seconds": 8.367177,
+            "pending": 9
+        },
+        {
+            "t_offset_seconds": 8.865795,
+            "pending": 7
+        },
+        {
+            "t_offset_seconds": 9.145496,
+            "pending": 6
+        },
+        {
+            "t_offset_seconds": 9.491653,
+            "pending": 4
+        },
+        {
+            "t_offset_seconds": 9.869886,
+            "pending": 2
+        },
+        {
+            "t_offset_seconds": 10.420867,
+            "pending": 0
+        }
+    ],
+    "baseline_waves": [
+        {
+            "concurrency": 3,
+            "count": 3,
+            "min": 0.086641,
+            "max": 0.112321,
+            "avg": 0.09621933333333332
+        },
+        {
+            "concurrency": 6,
+            "count": 6,
+            "min": 0.056737,
+            "max": 0.095909,
+            "avg": 0.06973883333333335
+        },
+        {
+            "concurrency": 12,
+            "count": 12,
+            "min": 0.053601,
+            "max": 0.141859,
+            "avg": 0.0980465
+        },
+        {
+            "concurrency": 24,
+            "count": 24,
+            "min": 0.039199,
+            "max": 0.209966,
+            "avg": 0.12337637500000002
+        }
+    ],
+    "drain_waves": [
+        {
+            "t_offset_seconds": 0.003796,
+            "concurrency": 3,
+            "stats": {
+                "count": 3,
+                "min": 0.036912,
+                "max": 0.047524,
+                "avg": 0.04045466666666667
+            }
+        },
+        {
+            "t_offset_seconds": 0.373677,
+            "concurrency": 6,
+            "stats": {
+                "count": 6,
+                "min": 0.039392,
+                "max": 0.073953,
+                "avg": 0.049925833333333336
+            }
+        },
+        {
+            "t_offset_seconds": 0.716215,
+            "concurrency": 12,
+            "stats": {
+                "count": 12,
+                "min": 0.04347,
+                "max": 0.165207,
+                "avg": 0.10011141666666667
+            }
+        },
+        {
+            "t_offset_seconds": 1.149813,
+            "concurrency": 24,
+            "stats": {
+                "count": 24,
+                "min": 0.04229,
+                "max": 0.304908,
+                "avg": 0.19880641666666674
+            }
+        },
+        {
+            "t_offset_seconds": 1.753467,
+            "concurrency": 3,
+            "stats": {
+                "count": 3,
+                "min": 0.03856,
+                "max": 0.059387,
+                "avg": 0.047744666666666664
+            }
+        },
+        {
+            "t_offset_seconds": 2.082816,
+            "concurrency": 6,
+            "stats": {
+                "count": 6,
+                "min": 0.074528,
+                "max": 0.115598,
+                "avg": 0.0937905
+            }
+        },
+        {
+            "t_offset_seconds": 2.509414,
+            "concurrency": 12,
+            "stats": {
+                "count": 12,
+                "min": 0.102112,
+                "max": 0.233672,
+                "avg": 0.18348783333333332
+            }
+        },
+        {
+            "t_offset_seconds": 3.076829,
+            "concurrency": 24,
+            "stats": {
+                "count": 24,
+                "min": 0.060532,
+                "max": 0.309974,
+                "avg": 0.19325320833333337
+            }
+        },
+        {
+            "t_offset_seconds": 3.787256,
+            "concurrency": 3,
+            "stats": {
+                "count": 3,
+                "min": 0.03446,
+                "max": 0.062343,
+                "avg": 0.04666800000000001
+            }
+        },
+        {
+            "t_offset_seconds": 4.142251,
+            "concurrency": 6,
+            "stats": {
+                "count": 6,
+                "min": 0.039311,
+                "max": 0.074404,
+                "avg": 0.05487349999999999
+            }
+        },
+        {
+            "t_offset_seconds": 4.574381,
+            "concurrency": 12,
+            "stats": {
+                "count": 12,
+                "min": 0.054007,
+                "max": 0.143873,
+                "avg": 0.09360041666666667
+            }
+        },
+        {
+            "t_offset_seconds": 5.080661,
+            "concurrency": 24,
+            "stats": {
+                "count": 24,
+                "min": 0.061251,
+                "max": 0.296722,
+                "avg": 0.17389404166666667
+            }
+        },
+        {
+            "t_offset_seconds": 5.678091,
+            "concurrency": 3,
+            "stats": {
+                "count": 3,
+                "min": 0.043033,
+                "max": 0.052767,
+                "avg": 0.04844933333333334
+            }
+        },
+        {
+            "t_offset_seconds": 6.007751,
+            "concurrency": 6,
+            "stats": {
+                "count": 6,
+                "min": 0.040541,
+                "max": 0.077037,
+                "avg": 0.05794883333333333
+            }
+        },
+        {
+            "t_offset_seconds": 6.36532,
+            "concurrency": 12,
+            "stats": {
+                "count": 12,
+                "min": 0.0378,
+                "max": 0.112673,
+                "avg": 0.08034466666666666
+            }
+        },
+        {
+            "t_offset_seconds": 6.742251,
+            "concurrency": 24,
+            "stats": {
+                "count": 24,
+                "min": 0.048708,
+                "max": 0.316121,
+                "avg": 0.18998645833333336
+            }
+        },
+        {
+            "t_offset_seconds": 7.352473,
+            "concurrency": 3,
+            "stats": {
+                "count": 3,
+                "min": 0.030308,
+                "max": 0.037024,
+                "avg": 0.03469233333333333
+            }
+        },
+        {
+            "t_offset_seconds": 7.654376,
+            "concurrency": 6,
+            "stats": {
+                "count": 6,
+                "min": 0.041625,
+                "max": 0.066081,
+                "avg": 0.0527775
+            }
+        },
+        {
+            "t_offset_seconds": 7.958526,
+            "concurrency": 12,
+            "stats": {
+                "count": 12,
+                "min": 0.052107,
+                "max": 0.151777,
+                "avg": 0.09485608333333334
+            }
+        },
+        {
+            "t_offset_seconds": 8.367177,
+            "concurrency": 24,
+            "stats": {
+                "count": 24,
+                "min": 0.043748,
+                "max": 0.22294,
+                "avg": 0.13433041666666667
+            }
+        },
+        {
+            "t_offset_seconds": 8.865795,
+            "concurrency": 3,
+            "stats": {
+                "count": 3,
+                "min": 0.031957,
+                "max": 0.039849,
+                "avg": 0.03599
+            }
+        },
+        {
+            "t_offset_seconds": 9.145496,
+            "concurrency": 6,
+            "stats": {
+                "count": 6,
+                "min": 0.047569,
+                "max": 0.088602,
+                "avg": 0.06872850000000001
+            }
+        },
+        {
+            "t_offset_seconds": 9.491653,
+            "concurrency": 12,
+            "stats": {
+                "count": 12,
+                "min": 0.030111,
+                "max": 0.119717,
+                "avg": 0.07523266666666667
+            }
+        },
+        {
+            "t_offset_seconds": 9.869886,
+            "concurrency": 24,
+            "stats": {
+                "count": 24,
+                "min": 0.043943,
+                "max": 0.283682,
+                "avg": 0.17489220833333333
+            }
+        }
+    ],
+    "degradation_by_concurrency": {
+        "3": {
+            "baseline_avg_seconds": 0.09621933333333332,
+            "during_drain_avg_seconds": 0.04233316666666667,
+            "delta_seconds": -0.05388616666666665,
+            "delta_pct": -0.5600347123585696
+        },
+        "6": {
+            "baseline_avg_seconds": 0.06973883333333335,
+            "during_drain_avg_seconds": 0.06300744444444444,
+            "delta_seconds": -0.006731388888888912,
+            "delta_pct": -0.09652282045950836
+        },
+        "12": {
+            "baseline_avg_seconds": 0.0980465,
+            "during_drain_avg_seconds": 0.1046055138888889,
+            "delta_seconds": 0.006559013888888909,
+            "delta_pct": 0.06689697122170511
+        },
+        "24": {
+            "baseline_avg_seconds": 0.12337637500000002,
+            "during_drain_avg_seconds": 0.17752712500000004,
+            "delta_seconds": 0.05415075000000001,
+            "delta_pct": 0.4389069625363851
+        }
+    },
+    "degradation_observed": true,
+    "notes": []
+}
