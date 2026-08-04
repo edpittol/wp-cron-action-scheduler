@@ -31,19 +31,31 @@ declare( strict_types=1 );
  */
 
 /**
- * Extracts the `post_flush_status` from the last log line for the given
- * file key, ignoring anything that doesn't parse as JSON or doesn't carry
- * a matching `file` field -- a stray/malformed line must not be
- * misreported as this file's own status.
+ * Extracts the whole last log entry for the given file key, ignoring
+ * anything that doesn't parse as JSON or doesn't carry a matching `file`
+ * field -- a stray/malformed line must not be misreported as this file's
+ * own record.
  *
- * Returns null (never fabricates a status) when no matching line exists.
+ * Issue #35 widened this from "the post_flush_status int" to the entry
+ * itself, because one status is no longer the whole observation: each proof
+ * file now logs the status it ATTEMPTED, what the setting call RETURNED,
+ * and the status actually in effect AFTERWARDS (see
+ * docker/fastcgi-isolation/flush-then-status.php's docblock for why a
+ * hardcoded 403 was not good enough). `attempted_status`/`set_call_returned`
+ * are read with `??` rather than required, so a line written by an older
+ * build of those files still yields its status instead of being discarded
+ * as malformed.
+ *
+ * Returns null (never fabricates anything) when no matching line exists.
+ *
+ * @return array{post_flush_status: int, attempted_status: int|null, set_call_returned: int|bool|null}|null
  */
-function wpcas_fastcgi_isolation_extract_last_status( string $log_contents, string $file ): ?int {
+function wpcas_fastcgi_isolation_extract_last_entry( string $log_contents, string $file ): ?array {
 	if ( '' === trim( $log_contents ) ) {
 		return null;
 	}
 
-	$status = null;
+	$entry = null;
 
 	foreach ( preg_split( '/\r\n|\r|\n/', $log_contents ) as $line ) {
 		if ( '' === trim( $line ) ) {
@@ -64,8 +76,66 @@ function wpcas_fastcgi_isolation_extract_last_status( string $log_contents, stri
 			continue;
 		}
 
-		$status = (int) $decoded['post_flush_status'];
+		$entry = array(
+			'post_flush_status' => (int) $decoded['post_flush_status'],
+			'attempted_status'  => isset( $decoded['attempted_status'] ) ? (int) $decoded['attempted_status'] : null,
+			'set_call_returned' => $decoded['set_call_returned'] ?? null,
+		);
 	}
 
-	return $status;
+	return $entry;
+}
+
+/**
+ * How many entries the log currently holds for the given file key.
+ *
+ * Exists so a caller can tell a NEW entry from the one an earlier run left
+ * behind (issue #35): the log is append-only and lives for the container's
+ * lifetime, so "the last line for this key" is only this request's line if
+ * this request actually wrote one. docker/wp-cli/measure-fastcgi-isolation.php
+ * counts before issuing its request and waits for the count to grow --
+ * without that, its bounded wait would be satisfied instantly by a stale
+ * entry and would report a previous run's facts as this one's.
+ */
+function wpcas_fastcgi_isolation_count_entries( string $log_contents, string $file ): int {
+	if ( '' === trim( $log_contents ) ) {
+		return 0;
+	}
+
+	$count = 0;
+
+	foreach ( preg_split( '/\r\n|\r|\n/', $log_contents ) as $line ) {
+		if ( '' === trim( $line ) ) {
+			continue;
+		}
+
+		$decoded = json_decode( $line, true );
+
+		if ( ! is_array( $decoded ) ) {
+			continue;
+		}
+
+		if ( ! isset( $decoded['file'], $decoded['post_flush_status'] ) ) {
+			continue;
+		}
+
+		if ( $decoded['file'] !== $file ) {
+			continue;
+		}
+
+		++$count;
+	}
+
+	return $count;
+}
+
+/**
+ * The post-flush status alone, for callers that only need that one field.
+ * Kept as a thin wrapper over wpcas_fastcgi_isolation_extract_last_entry()
+ * so there is still exactly one parser walking the log.
+ */
+function wpcas_fastcgi_isolation_extract_last_status( string $log_contents, string $file ): ?int {
+	$entry = wpcas_fastcgi_isolation_extract_last_entry( $log_contents, $file );
+
+	return null === $entry ? null : $entry['post_flush_status'];
 }

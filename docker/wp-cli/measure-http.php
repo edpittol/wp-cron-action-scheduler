@@ -82,6 +82,15 @@ require __DIR__ . '/lib/correlation.php';
 const WPCAS_NGINX_ACCESS_LOG = '/var/log/wpcas-nginx/access.log';
 const WPCAS_PHP_FPM_ACCESS_LOG = '/var/log/wpcas/php-fpm-access.log';
 
+// Issue #35: the third, in-PHP source -- the post-flush status, written by
+// docker/mu-plugins/00-wpcas-post-flush-status-probe.php from a shutdown
+// function, in the same request_id=/status= shape as the two access logs
+// above. Needed because neither access log can supply it: both nginx and
+// PHP-FPM record the status that was FLUSHED (measured against this stack,
+// see that probe's own docblock), which under wp-cron.php's
+// fastcgi_finish_request() is the masked 200, not the guard's own 403.
+const WPCAS_POST_FLUSH_STATUS_LOG = '/var/log/wpcas/post-flush-status.log';
+
 /** @var array<int, string> $args Positional args from `wp eval-file`. */
 $control = $args[0] ?? 'http-wp-cron';
 
@@ -278,22 +287,57 @@ fwrite(
 // rather than this script warning or aborting over evidence that is
 // recorded when available, not required to trust the outcome itself (this
 // ticket's own scope -- see lib/result-record.php's module docblock).
-$web_lines = @file( WPCAS_NGINX_ACCESS_LOG, FILE_IGNORE_NEW_LINES ); // phpcs:ignore WordPress.PHP.NoSilencedErrors -- missing file handled explicitly below, not masked.
-$fpm_lines = @file( WPCAS_PHP_FPM_ACCESS_LOG, FILE_IGNORE_NEW_LINES ); // phpcs:ignore WordPress.PHP.NoSilencedErrors -- same as above.
-
-$server_observed = wpcas_correlation_find_pair(
-	$request_id,
-	false === $web_lines ? array() : $web_lines,
-	false === $fpm_lines ? array() : $fpm_lines
+// Read with a bounded wait, not once (added while re-measuring the matrix
+// for issue #35): the settle poll above tells us the QUEUE stopped moving,
+// which is not quite the same instant as the serving request finishing.
+// PHP-FPM writes its access line, and the post-flush probe its own line,
+// only once the request has fully ended -- so on an unarmed run, where the
+// drain and the request end together, reading once loses that race and
+// records "no line found" for two of the three sources. A fully unarmed
+// control reporting no server-side evidence is exactly the row a reader
+// most needs it on, since it is the comparison every armed row is judged
+// against.
+//
+// The wait resolves honestly in both directions: it stops as soon as all
+// three sources have a line for this request id, and after the bound it
+// records whatever it has -- null included. Null is a real reading for a
+// request that never reached PHP at all (guard section 5's nginx-layer
+// block, where FPM and the probe will never log anything, so this always
+// waits out the full bound), and is never backfilled from another source.
+$correlation_deadline = microtime( true ) + 10.0;
+$server_observed      = array(
+	'web_status'        => null,
+	'fpm_status'        => null,
+	'post_flush_status' => null,
 );
+
+do {
+	$web_lines        = @file( WPCAS_NGINX_ACCESS_LOG, FILE_IGNORE_NEW_LINES ); // phpcs:ignore WordPress.PHP.NoSilencedErrors -- missing file handled explicitly below, not masked.
+	$fpm_lines        = @file( WPCAS_PHP_FPM_ACCESS_LOG, FILE_IGNORE_NEW_LINES ); // phpcs:ignore WordPress.PHP.NoSilencedErrors -- same as above.
+	$post_flush_lines = @file( WPCAS_POST_FLUSH_STATUS_LOG, FILE_IGNORE_NEW_LINES ); // phpcs:ignore WordPress.PHP.NoSilencedErrors -- same as above.
+
+	$server_observed = wpcas_correlation_find_pair(
+		$request_id,
+		false === $web_lines ? array() : $web_lines,
+		false === $fpm_lines ? array() : $fpm_lines,
+		false === $post_flush_lines ? array() : $post_flush_lines
+	);
+
+	if ( ! in_array( null, $server_observed, true ) ) {
+		break;
+	}
+
+	usleep( 250000 );
+} while ( microtime( true ) < $correlation_deadline );
 
 fwrite(
 	STDERR,
 	sprintf(
-		"Server-observed status for request id %s -- web (nginx): %s, process manager (PHP-FPM): %s.\n",
+		"Server-observed status for request id %s -- web (nginx): %s, process manager (PHP-FPM): %s, in-PHP post-flush: %s.\n",
 		$request_id,
 		null === $server_observed['web_status'] ? '(none found)' : (string) $server_observed['web_status'],
-		null === $server_observed['fpm_status'] ? '(none found)' : (string) $server_observed['fpm_status']
+		null === $server_observed['fpm_status'] ? '(none found)' : (string) $server_observed['fpm_status'],
+		null === $server_observed['post_flush_status'] ? '(none found)' : (string) $server_observed['post_flush_status']
 	)
 );
 

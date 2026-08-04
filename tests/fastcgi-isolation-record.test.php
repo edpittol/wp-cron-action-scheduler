@@ -31,20 +31,29 @@ function wpcas_test_assert_same( string $label, $expected, $actual, array &$fail
 	}
 }
 
-// The headline shape this ticket's own acceptance criteria describe: the
-// control's observable status is 403, the flushed file's is 200, and both
-// record 403 server-side.
+// The headline shape, as measured (issue #35 corrected what this fixture
+// used to claim): the control's observable status is 403 and its own
+// post-flush read-back agrees, because nothing was flushed before it set
+// the status. The flushed file's observable status is 200 and its
+// post-flush read-back is ALSO 200 -- its attempt was refused outright
+// (`set_call_returned` false), so the 403 it asked for exists nowhere but
+// in `attempted_status`. That contrast, not a matching pair of 403s, is
+// what the proof rests on.
 $facts = array(
 	'measured_at' => '2026-08-01T00:00:00+00:00',
 	'files'       => array(
 		'flush-then-status' => array(
 			'url'               => 'http://nginx/fastcgi-isolation/flush-then-status.php',
 			'observable_status' => 200,
-			'post_flush_status' => 403,
+			'attempted_status'  => 403,
+			'set_call_returned' => false,
+			'post_flush_status' => 200,
 		),
 		'status-then-flush'  => array(
 			'url'               => 'http://nginx/fastcgi-isolation/status-then-flush.php',
 			'observable_status' => 403,
+			'attempted_status'  => 403,
+			'set_call_returned' => 200,
 			'post_flush_status' => 403,
 		),
 	),
@@ -52,7 +61,7 @@ $facts = array(
 
 $record = wpcas_fastcgi_isolation_record_build( $facts );
 
-wpcas_test_assert_same( 'schema_version is 1', 1, $record['schema_version'], $failures );
+wpcas_test_assert_same( 'schema_version is 2', 2, $record['schema_version'], $failures );
 wpcas_test_assert_same( 'measured_at passes through unchanged', $facts['measured_at'], $record['measured_at'], $failures );
 wpcas_test_assert_same( 'files passes through unchanged', $facts['files'], $record['files'], $failures );
 
@@ -60,7 +69,9 @@ wpcas_test_assert_same( 'files passes through unchanged', $facts['files'], $reco
 // explicitly, read back from the built record rather than the input
 // facts, so this actually pins down what the record itself carries.
 wpcas_test_assert_same( 'flushed file: observable status is 200', 200, $record['files']['flush-then-status']['observable_status'], $failures );
-wpcas_test_assert_same( 'flushed file: post-flush status is 403', 403, $record['files']['flush-then-status']['post_flush_status'], $failures );
+wpcas_test_assert_same( 'flushed file: post-flush status read back as 200, not the 403 it asked for', 200, $record['files']['flush-then-status']['post_flush_status'], $failures );
+wpcas_test_assert_same( 'flushed file: attempted_status records what it asked for', 403, $record['files']['flush-then-status']['attempted_status'], $failures );
+wpcas_test_assert_same( 'flushed file: set_call_returned false (PHP refused the change)', false, $record['files']['flush-then-status']['set_call_returned'], $failures );
 wpcas_test_assert_same( 'control: observable status is 403', 403, $record['files']['status-then-flush']['observable_status'], $failures );
 wpcas_test_assert_same( 'control: post-flush status is 403', 403, $record['files']['status-then-flush']['post_flush_status'], $failures );
 

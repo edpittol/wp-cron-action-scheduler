@@ -33,11 +33,21 @@ declare( strict_types=1 );
 
 const WPCAS_FASTCGI_ISOLATION_LOG = '/var/log/wpcas/fastcgi-isolation.log';
 
-http_response_code( 403 );
+$set_call_returned = http_response_code( 403 );
+
+// Read back for the same reason its sibling does (issue #35): so this
+// control's own log line is an observation rather than a restatement of the
+// literal above. Here the read-back agrees with the attempt (403), because
+// nothing has been flushed yet -- and that agreement is precisely the
+// baseline that makes flush-then-status.php's disagreement attributable to
+// the ordering alone.
+$status_after_attempt = http_response_code();
 
 $entry = array(
 	'file'              => 'status-then-flush',
-	'post_flush_status' => 403,
+	'attempted_status'  => 403,
+	'set_call_returned' => $set_call_returned,
+	'post_flush_status' => $status_after_attempt,
 	'timestamp'         => gmdate( 'c' ),
 	'pid'               => getmypid(),
 );

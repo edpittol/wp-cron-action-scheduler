@@ -123,7 +123,7 @@ $facts = array(
 
 $record = wpcas_result_record_build( $facts );
 
-wpcas_test_assert_same( 'record: schema_version', 4, $record['schema_version'], $failures );
+wpcas_test_assert_same( 'record: schema_version', 5, $record['schema_version'], $failures );
 wpcas_test_assert_same( 'record: control', 'wp-cron', $record['control'], $failures );
 wpcas_test_assert_same( 'record: command argv', 'wp cron event run --due-now', $record['command']['argv'], $failures );
 wpcas_test_assert_same( 'record: command exit_code', 0, $record['command']['exit_code'], $failures );
@@ -204,7 +204,7 @@ $http_vector_facts['probe_records']    = array();
 $http_vector_record                    = wpcas_result_record_build( $http_vector_facts );
 wpcas_test_assert_same( 'http-vector row: command is null, not an object', null, $http_vector_record['command'], $failures );
 wpcas_test_assert_same( 'http-vector row: http_status carried through', 200, $http_vector_record['http_status'], $failures );
-wpcas_test_assert_same( 'http-vector row: schema_version', 4, $http_vector_record['schema_version'], $failures );
+wpcas_test_assert_same( 'http-vector row: schema_version', 5, $http_vector_record['schema_version'], $failures );
 
 // --- canary_line (issue #6) ----------------------------------------------
 //

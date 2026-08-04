@@ -79,9 +79,11 @@ function wpcas_correlation_index_by_request_id( array $lines ): array {
 }
 
 /**
- * Correlates one request id's pair of independently-recorded statuses --
- * the web server's (nginx) and the process manager's (PHP-FPM) -- out of
- * two raw sets of access log lines.
+ * Correlates one request id's independently-recorded statuses -- the web
+ * server's (nginx), the process manager's (PHP-FPM), and, when a third set
+ * of lines is supplied, the in-PHP post-flush status (issue #35's probe,
+ * docker/mu-plugins/00-wpcas-post-flush-status-probe.php) -- out of raw
+ * sets of log lines.
  *
  * The join key is the request id alone. Neither $web_lines nor $fpm_lines
  * needs to be in any particular order, and neither list needs to contain
@@ -94,21 +96,31 @@ function wpcas_correlation_index_by_request_id( array $lines ): array {
  * the failure mode a "nearest line" or "next line" heuristic would get
  * wrong.
  *
- * Either status is independently null when no line for this request id was
+ * Each status is independently null when no line for this request id was
  * found in that source -- e.g. the web server's log rotated the line away,
- * or the process manager's access log was disabled for this run. Never
- * fabricates a value, and never falls back to the other source's status.
+ * the process manager's access log was disabled for this run, or (for the
+ * post-flush source specifically) the request never reached PHP at all,
+ * which is exactly what guard section 5's nginx-layer block produces.
+ * Never fabricates a value, and never falls back to another source's
+ * status: the whole point of carrying three is that they are allowed to
+ * disagree, and the masking finding IS that disagreement.
  *
- * @param string[] $web_lines Raw nginx access log lines.
- * @param string[] $fpm_lines Raw PHP-FPM access log lines.
- * @return array{web_status: int|null, fpm_status: int|null}
+ * $post_flush_lines defaults to empty so callers that have no third source
+ * (or predate it) keep working unchanged and simply report null for it.
+ *
+ * @param string[] $web_lines        Raw nginx access log lines.
+ * @param string[] $fpm_lines        Raw PHP-FPM access log lines.
+ * @param string[] $post_flush_lines Raw post-flush-status probe lines.
+ * @return array{web_status: int|null, fpm_status: int|null, post_flush_status: int|null}
  */
-function wpcas_correlation_find_pair( string $request_id, array $web_lines, array $fpm_lines ): array {
-	$web_index = wpcas_correlation_index_by_request_id( $web_lines );
-	$fpm_index = wpcas_correlation_index_by_request_id( $fpm_lines );
+function wpcas_correlation_find_pair( string $request_id, array $web_lines, array $fpm_lines, array $post_flush_lines = array() ): array {
+	$web_index        = wpcas_correlation_index_by_request_id( $web_lines );
+	$fpm_index        = wpcas_correlation_index_by_request_id( $fpm_lines );
+	$post_flush_index = wpcas_correlation_index_by_request_id( $post_flush_lines );
 
 	return array(
-		'web_status' => $web_index[ $request_id ] ?? null,
-		'fpm_status' => $fpm_index[ $request_id ] ?? null,
+		'web_status'        => $web_index[ $request_id ] ?? null,
+		'fpm_status'        => $fpm_index[ $request_id ] ?? null,
+		'post_flush_status' => $post_flush_index[ $request_id ] ?? null,
 	);
 }

@@ -99,6 +99,15 @@ foreach ( WPCAS_FASTCGI_ISOLATION_FILES as $key => $filename ) {
 
 	fwrite( STDERR, "Requesting {$url}...\n" );
 
+	// Counted BEFORE the request (issue #35): the log is append-only and
+	// outlives a single run, so this is what lets the bounded wait below
+	// distinguish this request's own entry from one an earlier run left
+	// behind, instead of being satisfied instantly by a stale line.
+	$entries_before = wpcas_fastcgi_isolation_count_entries(
+		is_file( WPCAS_FASTCGI_ISOLATION_LOG ) ? (string) file_get_contents( WPCAS_FASTCGI_ISOLATION_LOG ) : '',
+		$key
+	);
+
 	$observable_status = wpcas_fastcgi_isolation_request( $url );
 
 	fwrite(
@@ -113,13 +122,46 @@ foreach ( WPCAS_FASTCGI_ISOLATION_FILES as $key => $filename ) {
 	// lib/fastcgi-isolation-log.php's own docblock for why "last line for
 	// this key" is safe here specifically because these two requests run
 	// strictly sequentially, one at a time.
-	$log_contents = is_file( WPCAS_FASTCGI_ISOLATION_LOG ) ? (string) file_get_contents( WPCAS_FASTCGI_ISOLATION_LOG ) : '';
-	$post_flush_status = wpcas_fastcgi_isolation_extract_last_status( $log_contents, $key );
+	//
+	// Polled with a bounded wait, not read once (fixed while re-measuring
+	// this proof for issue #35, after a run recorded "(none recorded)" for
+	// the flushed file): flush-then-status.php writes its log line AFTER
+	// fastcgi_finish_request() has already closed the response, so this
+	// script can hold the finished response in hand before that write has
+	// happened. Reading once loses that race intermittently -- and loses it
+	// precisely on the file whose whole point is doing work after the
+	// response is gone. Same class of race, and the same bounded-wait
+	// answer, as measure-http.php's settle poll. The bound still resolves
+	// honestly: an entry that never appears is reported as null, never
+	// substituted with the observable status.
+	$deadline          = microtime( true ) + 5.0;
+	$entry             = null;
+	$post_flush_status = null;
 
+	do {
+		$log_contents = is_file( WPCAS_FASTCGI_ISOLATION_LOG ) ? (string) file_get_contents( WPCAS_FASTCGI_ISOLATION_LOG ) : '';
+
+		// Only once a NEW entry for this key exists is the last one this
+		// request's own -- see $entries_before above.
+		if ( wpcas_fastcgi_isolation_count_entries( $log_contents, $key ) > $entries_before ) {
+			$entry             = wpcas_fastcgi_isolation_extract_last_entry( $log_contents, $key );
+			$post_flush_status = null === $entry ? null : $entry['post_flush_status'];
+			break;
+		}
+
+		usleep( 100000 );
+	} while ( microtime( true ) < $deadline );
+
+	// Issue #35: what the file asked for, what PHP said about the asking,
+	// and what was actually in effect afterwards -- three separate facts,
+	// reported separately. The middle one is the whole reason the first two
+	// can differ: `false` means PHP refused the status change outright.
 	fwrite(
 		STDERR,
 		sprintf(
-			"  post-flush status (server-side record): %s\n",
+			"  attempted status: %s, set call returned: %s, post-flush status (read back server-side): %s\n",
+			null === $entry || null === $entry['attempted_status'] ? '(none recorded)' : (string) $entry['attempted_status'],
+			null === $entry ? '(none recorded)' : var_export( $entry['set_call_returned'], true ),
 			null === $post_flush_status ? '(none recorded)' : (string) $post_flush_status
 		)
 	);
@@ -127,6 +169,8 @@ foreach ( WPCAS_FASTCGI_ISOLATION_FILES as $key => $filename ) {
 	$files[ $key ] = array(
 		'url'               => $url,
 		'observable_status' => $observable_status,
+		'attempted_status'  => null === $entry ? null : $entry['attempted_status'],
+		'set_call_returned' => null === $entry ? null : $entry['set_call_returned'],
 		'post_flush_status' => $post_flush_status,
 	);
 }
