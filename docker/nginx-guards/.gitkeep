@@ -1,0 +1,10 @@
+Guard section 5's arming destination (issue #36 / ADR-0003).
+
+`bin/guard arm 5` copies 50-block-cron-entry-point.marker in here from
+docker/nginx-guards-available/; docker-compose.yml bind-mounts this
+directory read-only into the nginx container at /etc/wpcas/guards, where
+docker/nginx/default.conf tests for that marker per request.
+
+This placeholder exists only so the directory itself is tracked: git does
+not track empty directories, and the bind mount needs it to exist on the
+host before nginx starts (Docker would otherwise create it as root-owned).

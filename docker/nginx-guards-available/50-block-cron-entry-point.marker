@@ -1,0 +1,43 @@
+Guard section 5 (issue #36 / ADR-0003): block the cron entry point in
+front of PHP.
+
+This file is a MARKER, not a configuration file. nginx never reads its
+contents -- docker/nginx/default.conf tests only for its existence, per
+request, in the directory docker-compose.yml bind-mounts over
+/etc/wpcas/guards in the nginx container:
+
+    location = /wp/wp-cron.php {
+        if ( -f /etc/wpcas/guards/50-block-cron-entry-point.marker ) {
+            return 403;
+        }
+        ...
+    }
+
+That existence test is what makes this section obey the same arming
+concept as sections 1-4 (bin/guard copies an artefact into a destination;
+presence is the only toggle, absence is the only off state) without
+needing an nginx reload or restart: nginx re-evaluates the test on every
+request, so `bin/guard arm 5` takes effect on the very next one, exactly
+like a mu-plugin appearing in wp-content/mu-plugins does.
+
+Why a marker rather than a conf snippet armed by being included: an
+included snippet would only take effect on reload, which would make
+section 5 the one section whose arming needs a second mechanism -- the
+thing ADR-0003 rules out ("there is still exactly one arming concept
+across all five sections").
+
+WP-CLI is untouched by construction, not by a runtime check: this block
+lives in the web server, and a `wp` process never traverses nginx or
+PHP-FPM at all. Sections 1 and 3 need an explicit `PHP_SAPI` test to
+exempt WP-CLI because they run inside the same PHP that serves both; this
+one cannot see a CLI process even in principle.
+
+What this section deliberately CANNOT do -- the trade-off it exists to
+measure: nginx cannot read a PHP constant, so this block is
+unconditional. It therefore cannot honour the fleet caveat the way guard
+section 1 does (section 1 goes inert while DISABLE_WP_CRON is false, so a
+site still depending on the web loopback does not silently lose cron).
+Armed with the cron constant off, this section blocks the loopback anyway
+and cron is genuinely lost -- see the
+`nginx-cron-armed-cron-enabled` scenario, committed as that
+counter-example rather than left as prose.

@@ -6,3 +6,9 @@
 /docker/mu-plugins/20-suppress-async-dispatch.php
 /docker/mu-plugins/30-log-non-cli-canary.php
 /docker/mu-plugins/40-unhook-queue-runner.php
+
+# Guard section 5's marker file, copied into place by `bin/guard arm 5`
+# (issue #36 / ADR-0003). Canonical source: docker/nginx-guards-available/,
+# tracked there. Same reasoning as the mu-plugin guard copies above -- this
+# is the currently-armed copy, not the artefact.
+/docker/nginx-guards/50-block-cron-entry-point.marker
