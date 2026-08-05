@@ -69,6 +69,20 @@ RUN mkdir -p /var/log/wpcas \
 RUN touch /var/log/wpcas/fastcgi-isolation.log \
     && chmod 666 /var/log/wpcas/fastcgi-isolation.log
 
+# Issue #35: the post-flush status probe's own log
+# (docker/mu-plugins/00-wpcas-post-flush-status-probe.php), kept separate
+# from php-error.log for the same reason the isolation log above is: it
+# records an observation, not an error, and a log carrying PHP's own
+# deprecation noise would turn the correlator's job into a filtering
+# problem. Pre-created here rather than left to the probe: /var/log/wpcas
+# is root-owned, so the www-data pool child that actually runs the probe
+# could not create a file in it -- and file_put_contents() failing is
+# indistinguishable from a request that never set a post-flush status.
+# chmod 666 for the same root-owns/www-data-writes split as the two logs
+# above.
+RUN touch /var/log/wpcas/post-flush-status.log \
+    && chmod 666 /var/log/wpcas/post-flush-status.log
+
 # Issue #33: the process manager's (PHP-FPM's) own access log ships
 # commented out in this base image's default pool config -- see
 # docker/php-fpm/access-log.conf's own docblock for the directives this

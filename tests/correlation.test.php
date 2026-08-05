@@ -99,19 +99,26 @@ $pair = wpcas_correlation_find_pair(
 wpcas_test_assert_same( 'single pair: web_status', 200, $pair['web_status'], $failures );
 wpcas_test_assert_same( 'single pair: fpm_status', 200, $pair['fpm_status'], $failures );
 
-// The masking finding this ticket exists to make measurable: the web
-// server's line reports what the client actually saw (200, already
-// flushed via fastcgi_finish_request()), while the process manager's own
-// line -- written after the PHP process actually finished -- reports the
-// real final status a guard set afterwards. Two different, both-genuine
-// statuses for the same request id.
+// Two sources disagreeing for the same request id -- the shape this
+// correlator has to keep straight regardless of which source says what.
+//
+// NOTE, corrected against the running stack by issue #35: when issue #33
+// wrote this case it read as "the process manager's line reports the real
+// final status a guard set afterwards". That is NOT what PHP-FPM does. A
+// measured run against the armed cron entry point produced status=200 in
+// PHP-FPM's own access log as well -- the process manager records the
+// FLUSHED status, exactly like nginx. The post-flush status needs its own,
+// in-PHP source (see the third-source cases below), which is why issue #35
+// added one instead of reading it out of this log. This case stays as a
+// pure disagreement fixture, no longer as a claim about which log says
+// what.
 $pair_masked = wpcas_correlation_find_pair(
 	'req-a',
 	array( 'request_id=req-a status=200' ),
 	array( 'request_id=req-a status=403' )
 );
-wpcas_test_assert_same( 'masked pair: web_status is the client-observed 200', 200, $pair_masked['web_status'], $failures );
-wpcas_test_assert_same( 'masked pair: fpm_status is the server-recorded 403', 403, $pair_masked['fpm_status'], $failures );
+wpcas_test_assert_same( 'disagreeing pair: web_status', 200, $pair_masked['web_status'], $failures );
+wpcas_test_assert_same( 'disagreeing pair: fpm_status', 403, $pair_masked['fpm_status'], $failures );
 
 // This ticket's acceptance criterion in its sharpest form: correlation must
 // pick the right pair when two requests' lines interleave across the two
@@ -150,6 +157,50 @@ wpcas_test_assert_same( 'missing from one source: fpm_status is null, not fabric
 $pair_unknown = wpcas_correlation_find_pair( 'never-logged', array(), array() );
 wpcas_test_assert_same( 'absent from both: web_status is null', null, $pair_unknown['web_status'], $failures );
 wpcas_test_assert_same( 'absent from both: fpm_status is null', null, $pair_unknown['fpm_status'], $failures );
+
+// --- The third source: the in-PHP post-flush status (issue #35) -----------
+
+// The masking finding, as the three statuses one request actually produces:
+// both server-side logs record the flushed 200 (measured -- see the
+// corrected note above), while the in-PHP probe's own shutdown-time line
+// records the 403 the guard set after the response was already closed.
+// Three sources, one request id, and the disagreement IS the finding.
+$masking = wpcas_correlation_find_pair(
+	'req-masked',
+	array( 'request_id=req-masked status=200' ),
+	array( 'request_id=req-masked status=200' ),
+	array( 'request_id=req-masked status=403 flushed=1 time=2026-08-04T17:00:00+00:00' )
+);
+wpcas_test_assert_same( 'masking: web_status is the client-observed 200', 200, $masking['web_status'], $failures );
+wpcas_test_assert_same( 'masking: fpm_status is the flushed 200 too', 200, $masking['fpm_status'], $failures );
+wpcas_test_assert_same( 'masking: post_flush_status is the unreadable 403', 403, $masking['post_flush_status'], $failures );
+
+// A request that never reached PHP at all -- guard section 5's nginx-layer
+// block (issue #36). nginx logged its own 403; there is no PHP process to
+// have set anything afterwards, so the post-flush status is null. That null
+// is a real observation about where the block happened, not missing
+// evidence, and must never be backfilled from either access log.
+$blocked_in_front = wpcas_correlation_find_pair(
+	'req-nginx-blocked',
+	array( 'request_id=req-nginx-blocked status=403' ),
+	array(),
+	array()
+);
+wpcas_test_assert_same( 'blocked in front of PHP: web_status 403', 403, $blocked_in_front['web_status'], $failures );
+wpcas_test_assert_same( 'blocked in front of PHP: fpm_status null (never reached FPM)', null, $blocked_in_front['fpm_status'], $failures );
+wpcas_test_assert_same( 'blocked in front of PHP: post_flush_status null (no PHP ran)', null, $blocked_in_front['post_flush_status'], $failures );
+
+// Callers that pass no third source at all (any pre-#35 call site) report
+// null for it rather than erroring.
+$two_source_call = wpcas_correlation_find_pair( 'req-a', array( 'request_id=req-a status=200' ), array( 'request_id=req-a status=200' ) );
+wpcas_test_assert_same( 'two-source call: post_flush_status defaults to null', null, $two_source_call['post_flush_status'], $failures );
+
+// The probe's own line carries extra tokens (flushed=, time=) after the two
+// the parser joins on -- proof the shared parser reads this source's shape
+// as-is, with no source-specific branch.
+$probe_line_parsed = wpcas_correlation_parse_line( 'request_id=req-x status=403 flushed=1 time=2026-08-04T17:00:00+00:00' );
+wpcas_test_assert_same( 'probe line: request_id parsed', 'req-x', $probe_line_parsed['request_id'], $failures );
+wpcas_test_assert_same( 'probe line: status parsed', 403, $probe_line_parsed['status'], $failures );
 
 if ( array() !== $failures ) {
 	fwrite( STDERR, "FAIL\n" );

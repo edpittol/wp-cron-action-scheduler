@@ -99,8 +99,21 @@ declare( strict_types=1 );
  * null via the same `?? null` pattern as `canary_line`), so every existing
  * caller that never passes it keeps working unchanged.
  *
+ * schema_version 4 -> 5 (issue #35): `server_observed` gained a third
+ * status, `post_flush_status` -- the status the application ended up
+ * setting after its response had already been closed to the client, which
+ * no client can read back. It comes from a third, in-PHP source
+ * (docker/mu-plugins/00-wpcas-post-flush-status-probe.php), because neither
+ * server-side log can supply it: both nginx and PHP-FPM record the FLUSHED
+ * status, measured against this stack rather than assumed (see that probe's
+ * docblock). This is what makes the masking finding provable from one
+ * record: `http_status` and `web_status` say 200, `post_flush_status` says
+ * 403, and `outcome.drained` says 0 -- all for the same request id.
+ * Independently nullable like the other two, and legitimately null when a
+ * request never reached PHP at all (guard section 5's nginx-layer block).
+ *
  * There is no dual-version record support: every record this function
- * builds is schema_version 4, unconditionally, regardless of whether the
+ * builds is schema_version 5, unconditionally, regardless of whether the
  * caller passed `server_observed` -- same as every prior additive field
  * (`cron_in_progress_after`, `canary_line`) never made the schema version a
  * caller-dependent choice.
@@ -198,7 +211,7 @@ function wpcas_result_summarize_execution_contexts( array $messages ): array {
  *     probe_records: array<int, array{sapi: string, pid: int, timestamp: float}>,
  *     cron_in_progress_after: bool,
  *     canary_line?: string|null,
- *     server_observed?: array{web_status: int|null, fpm_status: int|null}|null,
+ *     server_observed?: array{web_status: int|null, fpm_status: int|null, post_flush_status?: int|null}|null,
  * } $facts
  *
  * @return array<string, mixed>
@@ -232,9 +245,11 @@ function wpcas_result_record_build( array $facts ): array {
 		// this same schema_version 3 -- additive fields, no further bump
 		// (see the module docblock and issue #10's `## Decisions`).
 		// Bumped 3 -> 4 (issue #33): added `server_observed` (see the
-		// module docblock's schema_version 3 -> 4 note). No dual-version
-		// record support -- every record built here is schema_version 4.
-		'schema_version'         => 4,
+		// module docblock's schema_version 3 -> 4 note). Bumped 4 -> 5
+		// (issue #35): `server_observed` gained `post_flush_status` (see
+		// that note too). No dual-version record support -- every record
+		// built here is schema_version 5.
+		'schema_version'         => 5,
 		'control'                => $facts['control'],
 		'command'                => $command,
 		// Always present (never omitted), independent of `command` -- see

@@ -69,8 +69,12 @@ The HTTP status a client can actually read — the one that reached the wire bef
 _Avoid_: real status, actual status, returned status, client status
 
 **Post-flush status**:
-A status the application set after its response had already been closed to the client. It is recorded server-side and is genuinely correct there, but no client can ever read it.
+The status in effect once the response had already been closed to the client — read back from the server rather than inferred from what the application asked for. Distinct from the **attempted status**, and measurement showed the two need not agree: on this stack a guard's post-flush `http_response_code()` call is refused outright, so the post-flush status stays the flushed one and the attempted status exists nowhere but in the source. A post-flush status is only ever a reading, never a restatement of an intent.
 _Avoid_: fake status, hidden status, masked status, late status
+
+**Attempted status**:
+A status the application asked for. A fact about the code, which becomes a **post-flush status** only if the server actually accepted it.
+_Avoid_: intended status, set status, real status
 
 **Occupancy**:
 How many server workers a drain holds, and for how long — the capacity cost of running the queue in a web request.

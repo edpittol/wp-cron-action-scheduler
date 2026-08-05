@@ -1,0 +1,308 @@
+{
+  "schema_version": 5,
+  "control": "action-scheduler",
+  "command": {
+    "argv": "wp action-scheduler run",
+    "exit_code": 0
+  },
+  "http_status": null,
+  "started_at": "2026-08-04T17:56:46+00:00",
+  "finished_at": "2026-08-04T17:56:58+00:00",
+  "elapsed_seconds": 12.154732942581177,
+  "preflight": {
+    "ok": true,
+    "pending_count": 50,
+    "callback_attached": true,
+    "cron_in_progress": false,
+    "claims_count": 0,
+    "wp_version": "7.0.2",
+    "wp_version_lockfile": "7.0.2",
+    "action_scheduler_version": "4.0.0",
+    "action_scheduler_version_lockfile": "4.0.0",
+    "pool_max_children": 6,
+    "max_execution_time_seconds": 30,
+    "request_terminate_timeout_seconds": 35,
+    "fastcgi_read_timeout_seconds": 40,
+    "failures": []
+  },
+  "cron_in_progress_after": false,
+  "outcome": {
+    "pending_before": 50,
+    "pending_after": 0,
+    "drained": 50,
+    "fully_drained": true,
+    "probe_executions_observed": 50
+  },
+  "execution_contexts": {
+    "started": {
+      "WP CLI": 50
+    },
+    "completed": {
+      "WP CLI": 50
+    },
+    "other": {
+      "action created": 50
+    }
+  },
+  "probe_records": [
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866207.285821
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866207.505626
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866207.725285
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866207.949891
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866208.177214
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866208.390856
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866208.610909
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866208.826136
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866209.04771
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866209.274137
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866209.493674
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866209.713408
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866209.931727
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866210.159261
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866210.375259
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866210.598766
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866210.822578
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866211.051629
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866211.277849
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866211.498048
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866211.718041
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866211.944325
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866212.163917
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866212.386662
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866212.60756
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866212.82604
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866213.049723
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866213.271215
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866213.489754
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866213.714085
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866213.964675
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866214.199964
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866214.422367
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866214.642931
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866214.867303
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866215.102341
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866215.336716
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866215.579471
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866215.795016
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866216.020393
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866216.240467
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866216.460931
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866216.681029
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866216.900861
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866217.126269
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866217.355113
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866217.574945
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866217.792631
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866218.012825
+    },
+    {
+      "sapi": "cli",
+      "pid": 99,
+      "timestamp": 1785866218.236387
+    }
+  ],
+  "canary_line": null,
+  "canary_fired": false,
+  "server_observed": null,
+  "matrix_context": {
+    "scenario_label": "cli-action-scheduler",
+    "armed_sections": [],
+    "disable_wp_cron": true,
+    "seed_count": 50
+  }
+}

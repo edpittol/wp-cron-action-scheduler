@@ -2,8 +2,17 @@
 #
 # Issue #10: drives every scenario this evidence base rests on -- both
 # CLI controls (#4), all three HTTP vectors and their armed/unarmed states
-# (#5/#6/#7), the unhook-timing table (#8), and the worker-occupancy
-# measurement (#9) -- end to end, unattended, in one run.
+# (#5/#6/#7), guard section 5's own pair of nginx-layer scenarios and its
+# fleet-caveat counter-example (#36), the unhook-timing table (#8), and the
+# worker-occupancy measurement (#9) -- end to end, unattended, in one run.
+#
+# One deliberate exception: the fastcgi_finish_request() isolation proof
+# (`bin/stack measure-fastcgi-isolation`, issue #34) is NOT driven here. It
+# is not a scenario in this repo's own sense -- no vector, no guard state, no
+# queue -- just two static files proving a PHP mechanism, and it writes its
+# own separate schema that bin/generate-report does not render as a scenario
+# row. It is run and committed on its own; the report's masking section cites
+# its record by path.
 #
 # For every ordinary scenario (everything except unhook-timing, which
 # manages its own arm/disarm/reset internally -- see bin/measure-unhook-timing):
@@ -574,6 +583,40 @@ run_scenario http-cron-unarmed "" true "$STACK" measure-http http-cron-unarmed
 run_scenario http-cron-armed "1" true "$STACK" measure-http http-cron-armed
 wait_for_action_scheduler_cron_due
 run_scenario http-cron-armed-cron-enabled "1" false "$STACK" measure-http http-cron-armed-cron-enabled
+set_disable_wp_cron true
+
+# --- Guard section 5: the same entry point, blocked in front of PHP -------
+#
+# Issue #36 / ADR-0003. The pair below is the whole point of section 5
+# existing: same vector, same measurement command, one layer further out.
+#
+#   nginx-cron-armed          -- section 5 armed, cron constant ON. Expected:
+#                                an OBSERVABLE 403 (nginx refused the request
+#                                before PHP bootstrapped, so nothing was
+#                                flushed to mask it) and zero drained. This
+#                                is the row that contrasts with
+#                                http-cron-armed above, where the identical
+#                                block one layer in yields a client-visible
+#                                200.
+#   nginx-cron-armed-cron-enabled
+#                             -- section 5 armed, cron constant OFF. The
+#                                counter-example, and it is not optional: a
+#                                site with the constant off still depends on
+#                                the web loopback for cron. Guard section 1
+#                                goes inert in exactly this case (see
+#                                http-cron-armed-cron-enabled above: 200, 50
+#                                drained). nginx cannot read a PHP constant,
+#                                so section 5 blocks anyway -- 403, zero
+#                                drained, cron genuinely lost. That is the
+#                                trade-off ADR-0003 exists to state as a
+#                                measured fact rather than settle by
+#                                omission.
+#
+# No wait_for_action_scheduler_cron_due before either: like http-cron-armed,
+# the request is refused before WP-Cron's own due-time check can run, so
+# whether the event was due is not what these rows turn on.
+run_scenario nginx-cron-armed "5" true "$STACK" measure-http nginx-cron-armed
+run_scenario nginx-cron-armed-cron-enabled "5" false "$STACK" measure-http nginx-cron-armed-cron-enabled
 set_disable_wp_cron true
 
 run_scenario async-ajax-unarmed "" true "$STACK" measure-async-ajax async-ajax-unarmed

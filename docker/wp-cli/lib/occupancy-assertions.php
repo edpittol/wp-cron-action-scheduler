@@ -17,7 +17,18 @@ declare( strict_types=1 );
  * ticket's acceptance criteria ask for: response times and worker
  * occupancy across the drain window, the triggering request's own response
  * time kept separate from the drain duration, and the server model named
- * so the figures can never be misread as PHP-FPM.
+ * explicitly, so a figure measured under one server model can never be
+ * quoted as if it came from another.
+ *
+ * Issue #37 relabelled that model: this record used to name
+ * `php-cli-server` and its `PHP_CLI_SERVER_WORKERS` pool, a server this
+ * repo no longer contains (ADR-0001). The inference method below is
+ * unchanged, because it holds identically under PHP-FPM -- an FPM child
+ * handles exactly one request at a time, just as a built-in-server worker
+ * did -- but its stated basis now cites the server that was actually
+ * running, and `workers_total` comes from the pool's own
+ * `pm.max_children` read back from the running stack rather than an env
+ * var that no longer exists.
  *
  * @param array{
  *     server_model: string,
@@ -144,19 +155,21 @@ function wpcas_occupancy_build_record( array $facts ): array {
 		'server_model'            => sprintf( '%s, %d workers', $facts['server_model'], $facts['workers_total'] ),
 		'workers_total'           => $facts['workers_total'],
 		// Exactly one worker is tied up by the drain for its whole duration:
-		// php-cli-server serves each request with a single worker process
-		// synchronously for that request's lifetime, and Action Scheduler's
-		// async dispatch processes the whole due batch as one such request
-		// (confirmed for this run by the continuous, gap-free pending-count
-		// decline in drain.samples below) -- not something this server model
-		// exposes as a queryable "workers busy" figure, so this is an
+		// PHP-FPM hands each request to exactly one pool child, which
+		// serves it synchronously for that request's lifetime, and Action
+		// Scheduler's async dispatch processes the whole due batch as one
+		// such request (confirmed for this run by the continuous, gap-free
+		// pending-count decline in drain.samples below). FPM does expose a
+		// live "active processes" count via its status page, but this stack
+		// does not enable that pool -- so this figure remains an
 		// architectural inference from the request model, not a direct
-		// server-side reading. workers_occupied_by_drain_method and
-		// _basis push that same distinction into the record itself, not
-		// just this docstring, since the record outlives this code.
+		// server-side reading, exactly as it was under the retired server
+		// model. workers_occupied_by_drain_method and _basis push that same
+		// distinction into the record itself, not just this docstring,
+		// since the record outlives this code.
 		'workers_occupied_by_drain' => 1,
 		'workers_occupied_by_drain_method' => 'architectural-inference',
-		'workers_occupied_by_drain_basis' => 'php-cli-server serves each request with one worker process, synchronously, for that request\'s lifetime; Action Scheduler processed the whole due batch as one such request, confirmed for this run by the continuous, gap-free pending-count decline in pending_count_samples. This server model exposes no queryable "workers busy" count -- this figure is not a direct server-side reading.',
+		'workers_occupied_by_drain_basis' => 'PHP-FPM hands each request to exactly one pool child, which serves it synchronously for that request\'s lifetime; Action Scheduler processed the whole due batch as one such request, confirmed for this run by the continuous, gap-free pending-count decline in pending_count_samples. FPM\'s status page (which would report a live "active processes" count) is not enabled on this stack, so this figure is not a direct server-side reading.',
 		'trigger'                 => array(
 			'url'              => $facts['trigger']['url'],
 			'http_code'        => $facts['trigger']['http_code'],

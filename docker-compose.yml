@@ -81,6 +81,19 @@ services:
       # location block pulls in -- see that file and
       # docker/nginx/fastcgi-read-timeout.conf's own comments.
       - ./docker/nginx/fastcgi-read-timeout.conf:/etc/nginx/conf.d/fastcgi-read-timeout.conf:ro
+      # Issue #36: the FastCGI handling both PHP-serving locations in
+      # default.conf share. Deliberately NOT under /etc/nginx/conf.d/ --
+      # everything there is included at `http` level by the base image's own
+      # nginx.conf, and these directives are only valid inside a `location`.
+      - ./docker/nginx/php-fastcgi.conf:/etc/wpcas/nginx-php-fastcgi.conf:ro
+      # Issue #36 / ADR-0003: guard section 5's arming directory. Bind-mounted
+      # (not baked in) for the same reason docker/mu-plugins is on the php-fpm
+      # service: `bin/guard arm 5` adds/removes the marker file on the host
+      # and nginx -- which re-tests for it per request, see default.conf's
+      # `location = /wp/wp-cron.php` -- sees the change on its very next
+      # request, with no reload and no restart. Read-only: nginx only ever
+      # tests for the file, never writes it.
+      - ./docker/nginx-guards:/etc/wpcas/guards:ro
 
 volumes:
   webroot:

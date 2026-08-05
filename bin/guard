@@ -2,29 +2,36 @@
 #
 # Arm/disarm the cron-runner-policy guard sections.
 #
-# Each section has an artefact -- a file in docker/mu-plugins-available/ --
-# and a destination directory it gets copied into when armed. Today every
-# section's destination is docker/mu-plugins/, which is bind-mounted onto
-# wp-content/mu-plugins by docker-compose.yml and never scanned by
-# WordPress otherwise. "Arming" a section copies its artefact from
-# -available/ into its destination; "disarming" it removes that copy.
-# There is no flag or constant inside any guard file that changes its
-# behaviour -- presence in its destination is the only toggle, so whatever
-# runs during a scenario is exactly the code that would ship.
+# Each section has an artefact -- a file in an -available/ directory -- and
+# a destination directory it gets copied into when armed. "Arming" a
+# section copies its artefact from its -available/ directory into its
+# destination; "disarming" it removes that copy. There is no flag or
+# constant inside any guard artefact that changes its behaviour -- presence
+# in its destination is the only toggle, so whatever runs during a scenario
+# is exactly the code that would ship.
 #
-# Not every section's destination has to be docker/mu-plugins/ -- a
-# section can act in front of WordPress instead, landing somewhere other
-# than that WordPress-scanned directory. Nothing below assumes otherwise;
-# see the GUARD_SECTIONS registry.
+# Sections 1-4 act inside WordPress: their artefacts are mu-plugins in
+# docker/mu-plugins-available/, and their destination is
+# docker/mu-plugins/, which docker-compose.yml bind-mounts onto
+# wp-content/mu-plugins in the php-fpm container and WordPress never scans
+# otherwise.
 #
-# Because docker-compose.yml bind-mounts docker/mu-plugins/ straight into
-# the running container, arming a section whose destination is
-# docker/mu-plugins/ takes effect on the next request with no rebuild and
-# no restart -- WordPress re-scans wp-content/mu-plugins/ on every
-# request.
+# Section 5 (issue #36 / ADR-0003) acts in FRONT of WordPress, in nginx,
+# so both halves of that pair differ: its artefact is a marker file in
+# docker/nginx-guards-available/, and its destination is
+# docker/nginx-guards/, bind-mounted into the nginx container. That is why
+# the registry below carries a source directory per section as well as a
+# destination -- neither half is hard-coded, and nothing in this script
+# assumes a section is a mu-plugin.
+#
+# Arming takes effect on the next request either way, with no rebuild,
+# reload or restart: WordPress re-scans wp-content/mu-plugins/ on every
+# request, and nginx re-tests for section 5's marker on every request (see
+# docker/nginx/default.conf's `location = /wp/wp-cron.php`). One arming
+# concept, one off state, two layers.
 #
 # Usage:
-#   bin/guard arm [section...]   # activate exactly these sections (1-4);
+#   bin/guard arm [section...]   # activate exactly these sections (1-5);
 #                                 # no arguments disarms everything
 #   bin/guard status             # report which sections are armed, without
 #                                 # changing anything
@@ -33,28 +40,32 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AVAILABLE_DIR="$REPO_ROOT/docker/mu-plugins-available"
 ENABLED_DIR="$REPO_ROOT/docker/mu-plugins"
+NGINX_AVAILABLE_DIR="$REPO_ROOT/docker/nginx-guards-available"
+NGINX_ENABLED_DIR="$REPO_ROOT/docker/nginx-guards"
 
-# The guard section registry: number, artefact filename, destination
-# directory, and label -- in one place, in report order. This is the only
-# place that maps a ticket's "section N" language onto a file, where
-# arming it lands, and what it does. Every loop below is driven by this
-# list rather than a literal "1 2 3 4".
+# The guard section registry: number, artefact filename, source directory,
+# destination directory, and label -- in one place, in report order. This is
+# the only place that maps a ticket's "section N" language onto a file,
+# where that file comes from, where arming it lands, and what it does.
+# Every loop below is driven by this list rather than a literal "1 2 3 4 5".
 GUARD_SECTIONS=(
-    "1|10-block-http-cron.php|$ENABLED_DIR|block HTTP requests to the cron entry point"
-    "2|20-suppress-async-dispatch.php|$ENABLED_DIR|suppress Action Scheduler's async dispatch"
-    "3|30-log-non-cli-canary.php|$ENABLED_DIR|log a canary on any non-CLI queue run"
-    "4|40-unhook-queue-runner.php|$ENABLED_DIR|unhook the queue runner outside WP-CLI"
+    "1|10-block-http-cron.php|$AVAILABLE_DIR|$ENABLED_DIR|block HTTP requests to the cron entry point"
+    "2|20-suppress-async-dispatch.php|$AVAILABLE_DIR|$ENABLED_DIR|suppress Action Scheduler's async dispatch"
+    "3|30-log-non-cli-canary.php|$AVAILABLE_DIR|$ENABLED_DIR|log a canary on any non-CLI queue run"
+    "4|40-unhook-queue-runner.php|$AVAILABLE_DIR|$ENABLED_DIR|unhook the queue runner outside WP-CLI"
+    "5|50-block-cron-entry-point.marker|$NGINX_AVAILABLE_DIR|$NGINX_ENABLED_DIR|block the cron entry point in front of PHP (nginx)"
 )
 
-# Looks up one field (file, dest or label) of one section's registry
+# Looks up one field (file, source, dest or label) of one section's registry
 # entry. Returns non-zero if the section number isn't registered.
 registry_field() {
-    local wanted="$1" field="$2" entry num file dest label
+    local wanted="$1" field="$2" entry num file source dest label
     for entry in "${GUARD_SECTIONS[@]}"; do
-        IFS='|' read -r num file dest label <<< "$entry"
+        IFS='|' read -r num file source dest label <<< "$entry"
         if [ "$num" = "$wanted" ]; then
             case "$field" in
                 file) echo "$file" ;;
+                source) echo "$source" ;;
                 dest) echo "$dest" ;;
                 label) echo "$label" ;;
             esac
@@ -65,6 +76,7 @@ registry_field() {
 }
 
 section_file() { registry_field "$1" file; }
+section_source() { registry_field "$1" source; }
 section_destination() { registry_field "$1" dest; }
 section_label() { registry_field "$1" label; }
 
@@ -107,6 +119,7 @@ case "$cmd" in
 
         for n in $(all_sections); do
             file="$(section_file "$n")"
+            source="$(section_source "$n")"
             dest="$(section_destination "$n")"
             want=0
             for requested in "$@"; do
@@ -116,7 +129,7 @@ case "$cmd" in
             mkdir -p "$dest"
 
             if [ "$want" = "1" ]; then
-                cp "$AVAILABLE_DIR/$file" "$dest/$file"
+                cp "$source/$file" "$dest/$file"
             else
                 rm -f "$dest/$file"
             fi
@@ -129,7 +142,7 @@ case "$cmd" in
         ;;
     *)
         echo "Usage: $(basename "$0") {arm|status} [section...]" >&2
-        echo "  arm [1 2 3 4]   activate exactly these sections; no args disarms all" >&2
+        echo "  arm [1 2 3 4 5] activate exactly these sections; no args disarms all" >&2
         echo "  status          report the current armed/disarmed state" >&2
         exit 1
         ;;

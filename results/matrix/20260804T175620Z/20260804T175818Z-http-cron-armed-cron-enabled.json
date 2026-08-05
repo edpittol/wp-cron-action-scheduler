@@ -1,0 +1,311 @@
+{
+  "schema_version": 5,
+  "control": "http-cron-armed-cron-enabled",
+  "command": null,
+  "http_status": 200,
+  "started_at": "2026-08-04T17:58:18+00:00",
+  "finished_at": "2026-08-04T17:58:18+00:00",
+  "elapsed_seconds": 0.0025510787963867188,
+  "preflight": {
+    "ok": true,
+    "pending_count": 50,
+    "callback_attached": true,
+    "cron_in_progress": false,
+    "claims_count": 0,
+    "wp_version": "7.0.2",
+    "wp_version_lockfile": "7.0.2",
+    "action_scheduler_version": "4.0.0",
+    "action_scheduler_version_lockfile": "4.0.0",
+    "pool_max_children": 6,
+    "max_execution_time_seconds": 30,
+    "request_terminate_timeout_seconds": 35,
+    "fastcgi_read_timeout_seconds": 40,
+    "failures": []
+  },
+  "cron_in_progress_after": false,
+  "outcome": {
+    "pending_before": 50,
+    "pending_after": 0,
+    "drained": 50,
+    "fully_drained": true,
+    "probe_executions_observed": 50
+  },
+  "execution_contexts": {
+    "started": {
+      "WP Cron": 50
+    },
+    "completed": {
+      "WP Cron": 50
+    },
+    "other": {
+      "action created": 50
+    }
+  },
+  "probe_records": [
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866299.268579
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866299.499075
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866299.715787
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866299.936841
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866300.167853
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866300.398765
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866300.616272
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866300.83713
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866301.058818
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866301.286563
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866301.509344
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866301.728067
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866301.946646
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866302.173586
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866302.39798
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866302.617865
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866302.835293
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866303.052676
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866303.279572
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866303.501318
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866303.718623
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866303.933967
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866304.156218
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866304.374793
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866304.589927
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866304.856854
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866305.079762
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866305.299374
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866305.524167
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866305.743358
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866305.960465
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866306.182238
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866306.412991
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866306.637695
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866306.854955
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866307.077014
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866307.288993
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866307.505061
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866307.72677
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866307.942455
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866308.160842
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866308.379545
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866308.606895
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866308.824868
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866309.047208
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866309.274108
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866309.50317
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866309.727237
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866309.943999
+    },
+    {
+      "sapi": "fpm-fcgi",
+      "pid": 17,
+      "timestamp": 1785866310.166661
+    }
+  ],
+  "canary_line": null,
+  "canary_fired": false,
+  "server_observed": {
+    "web_status": 200,
+    "fpm_status": 200,
+    "post_flush_status": 200
+  },
+  "matrix_context": {
+    "scenario_label": "http-cron-armed-cron-enabled",
+    "armed_sections": [
+      1
+    ],
+    "disable_wp_cron": false,
+    "seed_count": 50
+  }
+}
