@@ -1,0 +1,77 @@
+<svg width="1000" height="420" viewBox="0 0 1000 420" xmlns="http://www.w3.org/2000/svg" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1b1840"/>
+      <stop offset="0.55" stop-color="#241f5c"/>
+      <stop offset="1" stop-color="#312a78"/>
+    </linearGradient>
+    <linearGradient id="cardbg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b2660"/>
+      <stop offset="1" stop-color="#221d52"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#ffffff" stroke-opacity="0.04" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <!-- background -->
+  <rect width="1000" height="420" fill="url(#bg)"/>
+  <rect width="1000" height="420" fill="url(#grid)"/>
+
+  <!-- All content is kept inside x 118..882 so a centred 1.91:1 crop
+       (x 99..901) of this 2.38:1 canvas loses nothing. -->
+
+  <!-- Left column is centred on the card's vertical midpoint (y=216) now
+       that the URL line is gone. -->
+
+  <!-- eyebrow -->
+  <text x="120" y="115" fill="#a9a4e6" font-size="15" font-weight="700" letter-spacing="3.5">WP-CRON · ACTION SCHEDULER</text>
+
+  <!-- headline -->
+  <text x="118" y="183" font-size="38" font-weight="500" fill="#ffffff">Close the doors behind</text>
+  <text x="118" y="235" font-size="46" font-weight="800" fill="#ffffff">WordPress cron</text>
+
+  <!-- subtitle -->
+  <text x="120" y="297" font-size="17.5" fill="#c4c0e8"><tspan font-family="'SF Mono', ui-monospace, 'JetBrains Mono', Menlo, Consolas, monospace" fill="#e6e3ff">DISABLE_WP_CRON</tspan> is a scheduling switch, not</text>
+  <text x="120" y="323" font-size="17.5" fill="#c4c0e8">a lock. Four doors still reach your cron.</text>
+
+  <!-- mapping card -->
+  <rect x="572" y="72" width="310" height="288" rx="18" fill="url(#cardbg)" stroke="#ffffff" stroke-opacity="0.10"/>
+
+  <!-- card header -->
+  <text x="596" y="106" fill="#9d98d8" font-size="12" font-weight="700" letter-spacing="1.5">ENTRY POINT</text>
+  <text x="858" y="106" fill="#9d98d8" font-size="12" font-weight="700" letter-spacing="1.5" text-anchor="end">RESULT</text>
+  <line x1="596" y1="118" x2="858" y2="118" stroke="#ffffff" stroke-opacity="0.10"/>
+
+  <!-- layer 1: core -->
+  <text x="596" y="146" fill="#7d78b8" font-size="11" font-weight="700" letter-spacing="1.5">WP-CRON</text>
+
+  <g font-family="'SF Mono', ui-monospace, 'JetBrains Mono', Menlo, Consolas, monospace" font-size="13.5">
+    <text x="596" y="176" fill="#e8e5ff">wp-cron.php</text>
+    <rect x="812" y="163" width="46" height="20" rx="10" fill="#4f46b8"/>
+    <text x="835" y="177" fill="#ffffff" font-size="12" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">403</text>
+
+    <text x="596" y="206" fill="#e8e5ff">wp cron event run</text>
+    <rect x="812" y="193" width="46" height="20" rx="10" fill="#4a9d7a"/>
+    <text x="835" y="207" fill="#ffffff" font-size="12" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">runs</text>
+  </g>
+
+  <line x1="596" y1="228" x2="858" y2="228" stroke="#ffffff" stroke-opacity="0.07"/>
+
+  <!-- layer 2: the plugin on top of it -->
+  <text x="596" y="252" fill="#7d78b8" font-size="11" font-weight="700" letter-spacing="1.5">+ ACTION SCHEDULER</text>
+
+  <g font-family="'SF Mono', ui-monospace, 'JetBrains Mono', Menlo, Consolas, monospace" font-size="13.5">
+    <text x="596" y="282" fill="#e8e5ff">admin-ajax.php</text>
+    <rect x="766" y="269" width="92" height="20" rx="10" fill="#3f7fb0"/>
+    <text x="812" y="283" fill="#ffffff" font-size="12" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">no callback</text>
+
+    <text x="596" y="312" fill="#e8e5ff">async dispatch</text>
+    <rect x="772" y="299" width="86" height="20" rx="10" fill="#a05298"/>
+    <text x="815" y="313" fill="#ffffff" font-size="12" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">suppressed</text>
+
+    <text x="596" y="342" fill="#e8e5ff">"Run" row action</text>
+    <rect x="812" y="329" width="46" height="20" rx="10" fill="#b0813f"/>
+    <text x="835" y="343" fill="#ffffff" font-size="12" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">open</text>
+  </g>
+</svg>

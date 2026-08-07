@@ -49,7 +49,7 @@ NGINX_ENABLED_DIR="$REPO_ROOT/docker/nginx-guards"
 # where that file comes from, where arming it lands, and what it does.
 # Every loop below is driven by this list rather than a literal "1 2 3 4 5".
 GUARD_SECTIONS=(
-    "1|10-block-http-cron.php|$AVAILABLE_DIR|$ENABLED_DIR|block HTTP requests to the cron entry point"
+    "1|10-block-http-cron.php|$AVAILABLE_DIR|$ENABLED_DIR|log, then block, HTTP hits on the cron entry point"
     "2|20-suppress-async-dispatch.php|$AVAILABLE_DIR|$ENABLED_DIR|suppress Action Scheduler's async dispatch"
     "3|30-log-non-cli-canary.php|$AVAILABLE_DIR|$ENABLED_DIR|log a canary on any non-CLI queue run"
     "4|40-unhook-queue-runner.php|$AVAILABLE_DIR|$ENABLED_DIR|unhook the queue runner outside WP-CLI"
